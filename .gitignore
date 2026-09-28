@@ -1,0 +1,174 @@
+# ============================================================
+# Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+backend/.venv/
+
+# Python packaging
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+
+# ============================================================
+# Environment / Secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+# Local configuration
+*.local
+
+
+# ============================================================
+# Node.js / React
+# ============================================================
+
+node_modules/
+frontend/node_modules/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+frontend/dist/
+build/
+frontend/build/
+
+# React cache
+.cache/
+.parcel-cache/
+
+
+# ============================================================
+# GIS / Satellite Data
+# ============================================================
+
+# Raw Sentinel-1 / Sentinel-2 satellite imagery
+data/raw/satellite_images/
+
+# Other raw datasets
+data/raw/
+
+# Processed/generated datasets
+data/processed/
+
+# Large raster files
+*.jp2
+*.tif
+*.tiff
+*.geotiff
+*.img
+
+# Satellite SAFE products
+*.SAFE/
+
+# GIS temporary files
+*.aux.xml
+*.ovr
+*.tfw
+*.wld
+
+
+# ============================================================
+# Machine Learning / Generated Files
+# ============================================================
+
+# Trained models
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.onnx
+
+# ML experiment output
+runs/
+outputs/
+checkpoints/
+models/
+
+# If you have small model/config files that MUST be committed,
+# remove the corresponding rule above.
+
+
+# ============================================================
+# Jupyter
+# ============================================================
+
+.ipynb_checkpoints/
+
+
+# ============================================================
+# IDE / Editors
+# ============================================================
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+
+# ============================================================
+# Operating System
+# ============================================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ============================================================
+# Logs / Temporary Files
+# ============================================================
+
+*.log
+*.tmp
+*.temp
+*.bak
+
+
+# ============================================================
+# Project-specific temporary files
+# ============================================================
+
+tmp/
+temp/
+*.cache
+
+!data/raw/
+!data/raw/satellite_images/
+data/raw/satellite_images/*
+!data/raw/satellite_images/S2B_MSIL2A_20260625T044659_N0512_R076_T45QUE_20260625T083525.SAFE/
+!data/raw/satellite_images/S2B_MSIL2A_20260625T044659_N0512_R076_T45QUE_20260625T083525.SAFE/**
+# NOTE (consolidation): upstream only un-ignored SAFE/**/*.jp2 here, which would
+# silently drop product metadata (MTD XML, manifest, quicklooks) on a fresh
+# `git add`. Widened to the full product tree so the scene stays complete.
+# Rasters remain Git-LFS-backed via .gitattributes; see PROVENANCE.md.

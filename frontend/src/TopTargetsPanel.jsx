@@ -1,0 +1,120 @@
+import React, { useMemo, useState } from 'react';
+import { Radio, X } from 'lucide-react';
+import { levelOf, LEVEL_BADGE_CLASS, LEVEL_TEXT_CLASS } from './potentialLevel.js';
+
+const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+const TOP_DEFAULT = 10;
+const TOP_EXPANDED = 25;
+
+// The single right-side ranking panel (also formerly duplicated as a
+// left-menu flyout -- that duplicate has been removed; this is now the
+// only ranking UI). Reads the already-loaded `candidates` array
+// (candidate_sites.csv rows for whichever dataset is active, from
+// /api/candidates) -- no new ranking is computed here, just a compact view
+// over the existing `rank` / `rank_score` fields. Clicking a row reuses
+// fetchPrediction (via onSelectCandidate), the same navigation flow every
+// other candidate-selection control already uses.
+//
+// Positioning-agnostic by design: the root element just fills whatever box
+// its parent gives it (w-72, h-full) -- App.jsx's shared right-side flex
+// row (Mineral Potential Legend + this panel) owns the actual
+// absolute/top/right/bottom placement, so this component doesn't fight
+// with the legend over the same screen coordinates.
+export default function TopTargetsPanel({ candidates, loading, error, selectedCandidateId, onSelectCandidate, onClose }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const ranked = useMemo(() => {
+    if (!Array.isArray(candidates)) return [];
+    return candidates
+      .filter((c) => isFiniteNum(c?.rank) && isFiniteNum(c?.rank_score))
+      .slice()
+      .sort((a, b) => a.rank - b.rank);
+  }, [candidates]);
+
+  const visible = ranked.slice(0, expanded ? TOP_EXPANDED : TOP_DEFAULT);
+  const canExpand = ranked.length > TOP_DEFAULT;
+
+  return (
+    <div className="w-72 h-full flex flex-col">
+      <div className="gis-lavender-card p-2.5 flex flex-col gap-1.5 max-h-full overflow-hidden">
+        <div className="flex items-center justify-between pb-1.5 border-b border-purple-500/20 shrink-0">
+          <h2 className="text-[10px] font-bold font-sans uppercase tracking-wider text-white flex items-center gap-1">
+            <span>🏆</span> Rank Index
+          </h2>
+          <div className="flex items-center gap-1 shrink-0">
+            {canExpand && (
+              <button
+                onClick={() => setExpanded((prev) => !prev)}
+                className="gis-btn-lavender-ghost px-1.5 py-0.5 text-[9px] text-white shrink-0"
+                title={expanded ? 'Collapse to Top 10' : 'Expand to Top 25'}
+              >
+                <span className="text-white font-bold">{expanded ? 'VIEW TOP 10' : 'VIEW TOP 25'}</span>
+              </button>
+            )}
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="p-0.5 rounded-full bg-slate-950/80 hover:bg-purple-500/30 text-slate-300 hover:text-white border border-purple-500/30 transition-colors duration-150 cursor-pointer"
+                title="Close Rank Index"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center gap-2 py-4 animate-pulse">
+            <Radio className="w-5 h-5 text-purple-400 animate-spin" />
+            <p className="text-[10px] font-mono text-slate-300 uppercase tracking-wider">
+              Loading candidates...
+            </p>
+          </div>
+        ) : error || ranked.length === 0 ? (
+          <p className="text-[11px] font-sans text-slate-300 text-center py-3">
+            No ranked candidates available.
+          </p>
+        ) : (
+          <div
+            className={`flex flex-col gap-1 overflow-y-auto custom-scrollbar pr-0.5 ${expanded ? 'max-h-[65vh]' : ''}`}
+          >
+            {visible.map((c) => {
+              const level = levelOf(c.rank_score);
+              const isSelected = selectedCandidateId != null && c.candidate_id === selectedCandidateId;
+              const canNavigate = isFiniteNum(c.centroid_latitude) && isFiniteNum(c.centroid_longitude);
+              return (
+                <button
+                  key={c.candidate_id ?? c.rank}
+                  onClick={() => canNavigate && onSelectCandidate && onSelectCandidate(c)}
+                  disabled={!canNavigate}
+                  className={`w-full text-left rounded-lg border flex items-center gap-1.5 px-1.5 py-1 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
+                    isSelected
+                      ? 'bg-purple-500/25 border-purple-400/70 shadow-[0_0_12px_rgba(168,85,247,0.25)]'
+                      : 'bg-slate-950/50 border-slate-800/90 hover:bg-purple-500/10 hover:border-purple-500/30'
+                  }`}
+                  title={`${c.candidate_id ?? ''} -- Rank #${c.rank}`}
+                >
+                  <span className="font-mono text-[9px] font-bold text-slate-400 w-5 shrink-0">
+                    #{c.rank}
+                  </span>
+                  <span className="flex-1 min-w-0 font-mono text-[9px] font-semibold text-white truncate">
+                    {c.candidate_id ?? '--'}
+                  </span>
+                  {level && (
+                    <span className={`shrink-0 rounded font-mono font-bold border text-[7px] px-1 py-0.5 ${LEVEL_BADGE_CLASS[level]}`}>
+                      {level}
+                    </span>
+                  )}
+                  <span className={`shrink-0 font-mono font-black tabular-nums text-[11px] ${LEVEL_TEXT_CLASS[level] ?? 'text-white'}`}>
+                    {c.rank_score.toFixed(1)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

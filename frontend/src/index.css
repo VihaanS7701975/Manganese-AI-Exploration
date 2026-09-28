@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  background: #020617;
+}
+
+/* Subtle appear animation for the left-menu flyout panel (SidebarMenu.jsx) --
+   a short, one-shot fade + settle on open; closing simply unmounts, no
+   exit animation, to keep the micro-interaction minimal. */
+@keyframes menu-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Custom slick scrollbar for tactical HUD panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Industrial range slider styling */
+input[type="range"] {
+  accent-color: #c084fc;
+}
+
+/* Tactical dark mode leaflet tooltip overrides */
+.leaflet-tooltip {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(51, 65, 85, 0.9) !important;
+  border-radius: 0.375rem !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+  padding: 8px 12px !important;
+}
+
+.leaflet-tooltip-top:before {
+  border-top-color: rgba(15, 23, 42, 0.95) !important;
+}
+.leaflet-tooltip-bottom:before {
+  border-bottom-color: rgba(15, 23, 42, 0.95) !important;
+}
+.leaflet-tooltip-left:before {
+  border-left-color: rgba(15, 23, 42, 0.95) !important;
+}
+.leaflet-tooltip-right:before {
+  border-right-color: rgba(15, 23, 42, 0.95) !important;
+}
+
+@layer components {
+  /* Tactical Geological Glass Containers & Decoupled Islands */
+  .gis-viewport-root {
+    @apply absolute inset-0 w-full h-full z-0;
+  }
+
+  .gis-hud-panel {
+    @apply bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl rounded-lg text-white;
+  }
+
+  .gis-hud-panel-compact {
+    @apply bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-xl rounded-md text-white;
+  }
+
+  .gis-island-cyan {
+    @apply border border-cyan-500/30 bg-slate-900/75 backdrop-blur-md shadow-[0_0_25px_rgba(6,182,212,0.18)] rounded-xl text-white;
+  }
+
+  .gis-island-charcoal {
+    @apply bg-slate-900/80 border border-slate-700/60 backdrop-blur-md rounded-xl text-white shadow-2xl;
+  }
+
+  /* Transparent Lavender Inspector Components */
+  .gis-inspector-container {
+    @apply bg-transparent text-white flex flex-col gap-3;
+  }
+
+  .gis-lavender-card {
+    @apply bg-slate-950/45 backdrop-blur-md border border-purple-500/25 rounded-xl text-white shadow-[0_4px_20px_rgba(168,85,247,0.06)];
+  }
+
+  .gis-badge-lavender {
+    @apply px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-purple-900/30 border border-purple-500/35 text-white shadow-sm;
+  }
+
+  .gis-btn-lavender-ghost {
+    @apply p-1.5 rounded-lg bg-slate-900/60 hover:bg-purple-500/20 border border-purple-500/30 hover:border-purple-400/50 text-white hover:text-purple-100 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-mono;
+  }
+
+  /* Buttons & Action Controls */
+  .gis-btn-primary {
+    @apply px-3 py-2 rounded-md bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer font-mono tracking-tight;
+  }
+
+  .gis-btn-secondary {
+    @apply px-3 py-1.5 rounded-md bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700 hover:border-slate-600 text-white text-xs font-mono font-medium flex items-center gap-1.5 transition-all cursor-pointer;
+  }
+
+  .gis-btn-tactical {
+    @apply px-2.5 py-1 rounded-md text-xs font-mono font-semibold flex items-center gap-1.5 transition-all cursor-pointer border;
+  }
+
+  .gis-btn-tactical-active {
+    @apply bg-amber-500/20 border-amber-400/80 text-amber-300 shadow-sm shadow-amber-950;
+  }
+
+  .gis-btn-tactical-idle {
+    @apply bg-slate-800/80 border-slate-700/80 hover:bg-slate-700/80 text-slate-300 hover:text-white;
+  }
+
+  /* Telemetry Metric Tile */
+  .gis-metric-tile {
+    @apply p-2.5 rounded-md bg-slate-950/80 border border-slate-800/90 flex flex-col justify-between;
+  }
+
+  /* Tactical Spec Sheet Table Rows */
+  .gis-spec-row {
+    @apply flex justify-between items-center py-1.5 px-2 text-xs border-b border-purple-500/15 font-mono;
+  }
+
+  .gis-spec-label {
+    @apply text-white uppercase text-[10px] tracking-wider font-sans font-bold;
+  }
+
+  .gis-spec-value {
+    @apply text-white font-bold font-mono text-xs;
+  }
+
+  /* Badges & Chips */
+  .gis-badge-amber {
+    @apply px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-amber-500/15 border border-amber-500/40 text-amber-300;
+  }
+
+  .gis-badge-cyan {
+    @apply px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-cyan-500/15 border border-cyan-500/40 text-cyan-300;
+  }
+
+  .gis-badge-cobalt {
+    @apply px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-sky-500/15 border border-sky-500/40 text-sky-300;
+  }
+
+  .gis-badge-slate {
+    @apply px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-800/90 border border-slate-700 text-white;
+  }
+}
