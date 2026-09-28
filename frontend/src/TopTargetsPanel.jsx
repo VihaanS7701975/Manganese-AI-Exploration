@@ -1,11 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Radio, X } from 'lucide-react';
 import { levelOf, LEVEL_BADGE_CLASS, LEVEL_TEXT_CLASS } from './potentialLevel.js';
 
 const isFiniteNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 const TOP_DEFAULT = 10;
-const TOP_EXPANDED = 25;
+// C2 scale handling: the T45QUE set holds ~8,262 ranked candidates, so the
+// drawer pages through the whole already-loaded `candidates` array instead
+// of capping at a fixed Top 10/25 window no one can scroll past.
+const PAGE_SIZE = 25;
 
 // The single right-side ranking panel (also formerly duplicated as a
 // left-menu flyout -- that duplicate has been removed; this is now the
@@ -22,7 +25,9 @@ const TOP_EXPANDED = 25;
 // absolute/top/right/bottom placement, so this component doesn't fight
 // with the legend over the same screen coordinates.
 export default function TopTargetsPanel({ candidates, loading, error, selectedCandidateId, onSelectCandidate, onClose }) {
-  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
+  const [rankJump, setRankJump] = useState('');
+  const [topOnly, setTopOnly] = useState(false);
 
   const ranked = useMemo(() => {
     if (!Array.isArray(candidates)) return [];
@@ -32,8 +37,27 @@ export default function TopTargetsPanel({ candidates, loading, error, selectedCa
       .sort((a, b) => a.rank - b.rank);
   }, [candidates]);
 
-  const visible = ranked.slice(0, expanded ? TOP_EXPANDED : TOP_DEFAULT);
-  const canExpand = ranked.length > TOP_DEFAULT;
+  // Reset paging whenever the dataset (and therefore the array) changes.
+  useEffect(() => {
+    setPage(0);
+    setRankJump('');
+    setTopOnly(false);
+  }, [candidates]);
+
+  const totalPages = Math.max(1, Math.ceil(ranked.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = safePage * PAGE_SIZE;
+  const visible = topOnly
+    ? ranked.slice(0, TOP_DEFAULT)
+    : ranked.slice(pageStart, pageStart + PAGE_SIZE);
+
+  const goToRank = () => {
+    const n = parseInt(rankJump, 10);
+    if (!Number.isFinite(n) || n < 1 || ranked.length === 0) return;
+    const clamped = Math.min(n, ranked.length);
+    setTopOnly(false);
+    setPage(Math.floor((clamped - 1) / PAGE_SIZE));
+  };
 
   return (
     <div className="w-72 h-full flex flex-col">
@@ -43,15 +67,19 @@ export default function TopTargetsPanel({ candidates, loading, error, selectedCa
             <span>🏆</span> Rank Index
           </h2>
           <div className="flex items-center gap-1 shrink-0">
-            {canExpand && (
-              <button
-                onClick={() => setExpanded((prev) => !prev)}
-                className="gis-btn-lavender-ghost px-1.5 py-0.5 text-[9px] text-white shrink-0"
-                title={expanded ? 'Collapse to Top 10' : 'Expand to Top 25'}
-              >
-                <span className="text-white font-bold">{expanded ? 'VIEW TOP 10' : 'VIEW TOP 25'}</span>
-              </button>
-            )}
+            <span
+              className="font-mono text-[9px] text-slate-300 shrink-0"
+              title={`${ranked.length} ranked candidates loaded`}
+            >
+              {ranked.length.toLocaleString()} TOTAL
+            </span>
+            <button
+              onClick={() => setTopOnly((prev) => !prev)}
+              className="gis-btn-lavender-ghost px-1.5 py-0.5 text-[9px] text-white shrink-0"
+              title={topOnly ? 'Show paged full ranking' : 'Show only Top 10'}
+            >
+              <span className="text-white font-bold">{topOnly ? 'VIEW ALL' : 'TOP 10'}</span>
+            </button>
             {onClose && (
               <button
                 onClick={onClose}
@@ -76,9 +104,30 @@ export default function TopTargetsPanel({ candidates, loading, error, selectedCa
             No ranked candidates available.
           </p>
         ) : (
-          <div
-            className={`flex flex-col gap-1 overflow-y-auto custom-scrollbar pr-0.5 ${expanded ? 'max-h-[65vh]' : ''}`}
-          >
+          <div className="flex flex-col gap-1 overflow-y-auto custom-scrollbar pr-0.5 max-h-[55vh]">
+            {!topOnly && totalPages > 1 && (
+              <div className="flex items-center justify-between gap-1 pb-1 shrink-0">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={safePage === 0}
+                  className="gis-btn-lavender-ghost px-1.5 py-0.5 text-[9px] text-white shrink-0 disabled:opacity-30"
+                  title="Previous page"
+                >
+                  <span className="text-white font-bold">‹ PREV</span>
+                </button>
+                <span className="font-mono text-[9px] text-slate-300">
+                  {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, ranked.length)} / {ranked.length.toLocaleString()}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={safePage >= totalPages - 1}
+                  className="gis-btn-lavender-ghost px-1.5 py-0.5 text-[9px] text-white shrink-0 disabled:opacity-30"
+                  title="Next page"
+                >
+                  <span className="text-white font-bold">NEXT ›</span>
+                </button>
+              </div>
+            )}
             {visible.map((c) => {
               const level = levelOf(c.rank_score);
               const isSelected = selectedCandidateId != null && c.candidate_id === selectedCandidateId;
@@ -112,6 +161,28 @@ export default function TopTargetsPanel({ candidates, loading, error, selectedCa
                 </button>
               );
             })}
+            {!topOnly && ranked.length > PAGE_SIZE && (
+              <div className="flex items-center gap-1 pt-1 shrink-0">
+                <input
+                  value={rankJump}
+                  onChange={(e) => setRankJump(e.target.value.replace(/[^0-9]/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') goToRank();
+                  }}
+                  placeholder={`Rank 1–${ranked.length.toLocaleString()}`}
+                  inputMode="numeric"
+                  className="flex-1 min-w-0 bg-slate-950/60 border border-purple-500/25 rounded px-1.5 py-1 font-mono text-[9px] text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-400/60"
+                  title="Jump to a rank"
+                />
+                <button
+                  onClick={goToRank}
+                  className="gis-btn-lavender-ghost px-1.5 py-1 text-[9px] text-white shrink-0"
+                  title="Jump to rank"
+                >
+                  <span className="text-white font-bold">GO</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

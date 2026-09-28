@@ -45,6 +45,7 @@ import SidebarMenu from './SidebarMenu.jsx';
 import HowItWorks from './HowItWorks.jsx';
 import CandidateScoreBreakdown from './CandidateScoreBreakdown.jsx';
 import { LEVEL_EMOJI, LEVEL_DOT_CLASS, LEVEL_RANGE_LABEL } from './potentialLevel.js';
+import { API_BASE_URL, apiUrl } from './apiConfig.js';
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -92,7 +93,7 @@ const MANGANESE_BELTS = [
     ore: 'Braunite / Pyrolusite (51% Mn)',
     grade: 'Tier-1 High Potential',
     confidence: 0.90,
-    description: 'Tier-1 High Potential Braunite / Pyrolusite deposit with high-grade manganese (>51% Mn).'
+    description: 'Tier-1 reference corridor: Braunite / Pyrolusite-type ground historically reported above 51% Mn (reference geology, not a measured reserve here).'
   },
   {
     id: 'nagpur',
@@ -150,7 +151,7 @@ const MANGANESE_BELTS = [
     color: '#0ea5e9', // Deep Cobalt
     fillColor: '#0ea5e9',
     ore: 'Dolomite-Associated Manganese',
-    grade: 'Tier-2 Secondary Reserve',
+    grade: 'Tier-2 Secondary Corridor',
     confidence: 0.76,
     description: 'Tier-2 Secondary Gangpur Group dolomite-associated manganese horizons.'
   },
@@ -170,9 +171,9 @@ const MANGANESE_BELTS = [
     color: '#eab308', // Mineral Ochre Gold
     fillColor: '#eab308',
     ore: 'Psilomelane / Pyrolusite',
-    grade: 'Tier-1 Major South Reserve',
+    grade: 'Tier-1 Major South Corridor',
     confidence: 0.88,
-    description: 'Tier-1 Major South Reserve within Sandur Schist Belt (Dharwar Craton).'
+    description: 'Tier-1 reference corridor within Sandur Schist Belt (Dharwar Craton).'
   },
   {
     id: 'vizianagaram',
@@ -192,7 +193,7 @@ const MANGANESE_BELTS = [
     ore: 'Kodurite / Khondalite Complex',
     grade: 'Tier-2 Alteration Zone',
     confidence: 0.75,
-    description: 'Tier-2 Alteration Zone Eastern Ghats mobile belt Kodurite-type manganese deposit.'
+    description: 'Tier-2 Alteration Zone Eastern Ghats mobile belt Kodurite-type manganese reference corridor.'
   },
   {
     id: 'goa',
@@ -349,7 +350,7 @@ export default function App() {
       setSelectedDataset(dataset);
     }
     try {
-      const response = await fetch('http://localhost:8000/api/predict', {
+      const response = await fetch(apiUrl('/api/predict'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lat, lon, dataset: activeDataset })
@@ -377,7 +378,7 @@ export default function App() {
       setCandidatesLoading(true);
       setCandidatesError(false);
       try {
-        const response = await fetch(`http://localhost:8000/api/candidates?dataset=${selectedDataset}`);
+        const response = await fetch(apiUrl(`/api/candidates?dataset=${selectedDataset}`));
         const data = await response.json();
         setCandidates(Array.isArray(data.candidates) ? data.candidates : []);
       } catch (err) {
@@ -399,7 +400,7 @@ export default function App() {
     const loadOverlay = async () => {
       setPixelOverlay(null);
       try {
-        const response = await fetch(`http://localhost:8000/api/pixel_overlay?dataset=${selectedDataset}`);
+        const response = await fetch(apiUrl(`/api/pixel_overlay?dataset=${selectedDataset}`));
         const data = await response.json();
         if (cancelled) return;
         if (response.ok && data.available) {
@@ -412,8 +413,8 @@ export default function App() {
           // signal. Surface it explicitly so this failure mode is visible.
           console.warn(
             `Pixel overlay unavailable for dataset "${selectedDataset}" (HTTP ${response.status}). ` +
-            'If data/processed/overlays/*_score_overlay.png exists on disk, the backend process on ' +
-            'localhost:8000 is likely running an older build -- restart it.'
+            'If data/processed/overlays/*_score_overlay.png exists on disk, the backend process at ' +
+            `${API_BASE_URL} is likely running an older build -- restart it.`
           );
         }
       } catch (err) {
@@ -469,11 +470,13 @@ export default function App() {
     const filename = `geological_prospectus_${timestamp}.json`;
 
     const dossier = {
-      prospectus_title: "GeoManganese Mineral Potential & Resource Dossier",
+      prospectus_title: "GeoManganese Mineral Potential & Resource Dossier (Illustrative Reference Scenario)",
       program: "Smart India Hackathon (SIH26009)",
       team: "Team RIZZLERS",
       generated_at: new Date().toISOString(),
       engine: "GeoManganese AI Sentinel-2 / ASTER Multispectral Inversion Engine",
+      estimate_kind: "illustrative_capacity_scenario",
+      scenario_note: "Yield, deficit-reduction and feasibility figures below are static reference-scenario values for demo context. No ore-mineralogy or tonnage/yield model exists in this project; they are not ML predictions and not measured reserves.",
       target_geography: {
         latitude: selectedCoords.lat,
         longitude: selectedCoords.lon,
@@ -490,8 +493,8 @@ export default function App() {
         extraction_feasibility_score: prediction.shortfall_metrics?.extraction_feasibility_score ?? 8.5
       },
       national_impact_summary: {
-        national_manganese_deficit_target_mt: 6.8,
-        deficit_alleviation_contribution: `+${prediction.shortfall_metrics?.annual_deficit_reduction_pct ?? 14.8}%`,
+        national_manganese_deficit_reference_mt: 6.8,
+        deficit_alleviation_contribution_illustrative: `+${prediction.shortfall_metrics?.annual_deficit_reduction_pct ?? 14.8}%`,
         recommended_exploration_action:
           prediction.manganese_confidence > 0.8
             ? "Priority Ground-Truthing & Core Drilling Advised"
@@ -626,17 +629,22 @@ export default function App() {
               </div>
             </div>
 
-            {/* Est Yield Tile */}
+            {/* Illustrative Yield Tile -- reference-scenario values from the
+                backend (tons, not megatons); not an ML prediction or a
+                measured reserve. */}
             <div className="gis-metric-tile border-purple-500/20">
-              <span className="gis-spec-label text-white">EST YIELD</span>
+              <span className="gis-spec-label text-white">EST YIELD (ILLUSTRATIVE)</span>
               <div className="mt-1">
                 <p className="text-lg font-bold font-mono text-white tracking-tight">
-                  {prediction.shortfall_metrics?.estimated_yield_tons ? prediction.shortfall_metrics.estimated_yield_tons.toLocaleString() : '145,000'}
-                  <span className="text-[10px] text-slate-300 ml-1">MT</span>
+                  {(prediction.shortfall_metrics?.estimated_yield_tons ?? 0).toLocaleString()}
+                  <span className="text-[10px] text-slate-300 ml-1">tons</span>
                 </p>
                 <span className="text-[10px] font-mono text-white font-semibold">
                   FEASIBILITY: {prediction.shortfall_metrics?.extraction_feasibility_score ?? '8.5'}/10
                 </span>
+                <p className="text-[8px] font-sans text-slate-400 mt-1 leading-tight">
+                  Illustrative capacity scenario — not a measured reserve or ML-predicted yield.
+                </p>
               </div>
             </div>
           </div>
@@ -649,14 +657,15 @@ export default function App() {
             </div>
           )}
 
-          {/* Assay Spec Table */}
+          {/* Assay Spec Table -- ore label and deficit figure are the
+              backend's illustrative reference scenario, not assay results. */}
           <div className="rounded border border-purple-500/20 divide-y divide-purple-500/15 bg-slate-950/40">
             <div className="gis-spec-row">
-              <span className="gis-spec-label text-white">ORE COMPLEX</span>
+              <span className="gis-spec-label text-white">ORE COMPLEX (INDICATIVE)</span>
               <span className="text-white text-right text-[11px] font-mono font-medium">{prediction.ore_type_detected}</span>
             </div>
             <div className="gis-spec-row">
-              <span className="gis-spec-label text-white">DEFICIT REDUCTION</span>
+              <span className="gis-spec-label text-white">DEFICIT REDUCTION (ILLUSTRATIVE)</span>
               <span className="text-white text-right font-bold font-mono">+{prediction.shortfall_metrics?.annual_deficit_reduction_pct}%</span>
             </div>
             <div className="gis-spec-row">
@@ -664,7 +673,7 @@ export default function App() {
               <span className="text-white text-right text-[10px] font-mono font-medium">{selectedCoords.lat.toFixed(4)}°N, {selectedCoords.lon.toFixed(4)}°E</span>
             </div>
             <div className="gis-spec-row">
-              <span className="gis-spec-label text-white">RESERVE ZONE</span>
+              <span className="gis-spec-label text-white">REFERENCE ZONE</span>
               <span className="text-white text-right text-[10px] font-mono font-medium">{activeBelt ? activeBelt.shortName : 'CUSTOM_SECTOR'}</span>
             </div>
           </div>
@@ -720,7 +729,7 @@ export default function App() {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5 text-xs font-sans font-semibold text-white">
                 <TrendingUp className="h-3.5 w-3.5 text-orange-400" />
-                <span className="font-sans text-[11px] uppercase tracking-wider font-bold text-white">NATIONAL DEFICIT (MT)</span>
+                <span className="font-sans text-[11px] uppercase tracking-wider font-bold text-white">NATIONAL DEFICIT (MT, ILLUSTRATIVE)</span>
               </div>
               <span className="text-[9px] font-mono text-slate-300">2023-2026_EST</span>
             </div>
@@ -752,7 +761,7 @@ export default function App() {
               </ResponsiveContainer>
             </div>
             <p className="text-[9px] font-sans text-slate-300 text-center mt-1">
-              * Targeted AI exploration closes the projected 2026 deficit gap.
+              * Illustrative reference projection for demo context — not observed production data.
             </p>
           </div>
 
@@ -834,13 +843,13 @@ export default function App() {
               stay on top and clickable without any extra z-index handling. */}
           {pixelOverlay && (
             <ImageOverlay
-              url={`http://localhost:8000${pixelOverlay.image_url}`}
+              url={`${API_BASE_URL}${pixelOverlay.image_url}`}
               bounds={pixelOverlay.leaflet_bounds}
               opacity={1}
             />
           )}
 
-          {/* GEOJSON MINERAL RESERVE POLYGONS */}
+          {/* REFERENCE MINERAL CORRIDOR POLYGONS (static reference geology, not survey results) */}
           {MANGANESE_BELTS.map((belt) => {
             const isPassingThreshold = belt.confidence >= confidenceThreshold;
             const isHovered = hoveredBelt && hoveredBelt.id === belt.id;

@@ -72,6 +72,17 @@ frontend/build/
 # Raw Sentinel-1 / Sentinel-2 satellite imagery
 data/raw/satellite_images/
 
+# Generated local test scaffolding (scripts/create_test_raster.py output and
+# its demo derivatives). Never production data: no production code path
+# (backend, src/ml, src/data_processing, frontend) reads these; only the
+# standalone demo scripts (create_test_raster, create_feature_dataset,
+# gis_module/{gis_processor,cloud_filter,resample}) reference them.
+# The real Sentinel-2 SAFE product below is unaffected.
+data/raw/test_satellite.tif
+data/processed/filtered_test.tif
+data/processed/resampled_test.tif
+data/processed/satellite_features.csv
+
 # Other raw datasets
 data/raw/
 

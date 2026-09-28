@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -7,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-app = FastAPI(title="Manganese Reserve & Shortfall Engine")
+app = FastAPI(title="Manganese Prospectivity Engine")
 
 # Allow the frontend to communicate with this backend
 app.add_middleware(
@@ -148,12 +149,20 @@ def pixel_overlay(dataset: str = DEFAULT_DATASET):
 
 
 @app.get("/api/candidates")
-def list_candidates(dataset: str = DEFAULT_DATASET):
+def list_candidates(
+    dataset: str = DEFAULT_DATASET, limit: int = 0, offset: int = 0
+):
     """Every candidate site from the selected dataset's candidate_sites.csv,
     unmodified. `dataset` defaults to "t45que" so existing callers that
-    don't pass it get exactly the original T45QUE candidates, unchanged."""
+    don't pass it get exactly the original T45QUE candidates, unchanged.
+    Optional `limit`/`offset` paginate the ranked rows (C2 scale handling);
+    `limit` <= 0 returns all rows, preserving the exact previous default.
+    `total` always reports the full dataset size regardless of paging."""
     key = _resolve_dataset(dataset)
     df = CANDIDATES[key]
+    total = len(df)
+    if limit > 0:
+        df = df.iloc[max(offset, 0): max(offset, 0) + limit]
     records = json.loads(df.to_json(orient="records"))
     # Additive only: attach the optional manganese evidence fields per record
     # when a layer exists for this dataset; existing fields untouched.
@@ -161,7 +170,14 @@ def list_candidates(dataset: str = DEFAULT_DATASET):
         evidence = _manganese_evidence(key, rec.get("candidate_id"))
         if evidence:
             rec.update(evidence)
-    return {"count": len(records), "candidates": records, "dataset": key}
+    return {
+        "count": len(records),
+        "total": total,
+        "offset": max(offset, 0),
+        "limit": limit,
+        "candidates": records,
+        "dataset": key,
+    }
 
 
 @app.post("/api/predict")
@@ -171,8 +187,10 @@ def predict_reserve(query: CoordinateQuery):
     # in the nearest real candidate site from the selected dataset instead
     # of a random number; ore_type_detected and shortfall_metrics are not
     # produced by any stage of the recovered pipeline (no ore-mineralogy or
-    # tonnage/yield model exists for either dataset), so they remain the
-    # same static placeholder values as before.
+    # tonnage/yield model exists for either dataset), so they remain static
+    # illustrative reference-scenario values. They are explicitly labelled
+    # as such in the response (estimate_kind/note) and must never be read
+    # as ML predictions or measured reserves.
     key = _resolve_dataset(query.dataset)
     df = CANDIDATES[key]
     aoi = AOI_BOUNDS[key]
@@ -254,13 +272,127 @@ def predict_reserve(query: CoordinateQuery):
     return {
         "location": {"lat": query.lat, "lon": query.lon},
         "manganese_confidence": confidence,
-        "classification": "High Potential Reserve" if confidence > 0.8 else "Medium Potential",
-        "ore_type_detected": "Pyrolusite / Braunite Complex",
+        "classification": "High Potential Target" if confidence > 0.8 else "Medium Potential",
+        "ore_type_detected": "Pyrolusite / Braunite Complex (indicative reference label, not an assay result)",
         "shortfall_metrics": {
+            "estimate_kind": "illustrative_capacity_scenario",
             "estimated_yield_tons": 145000,
             "annual_deficit_reduction_pct": 14.8,
             "extraction_feasibility_score": 8.5,
+            "note": "Static reference-scenario values (tons) for demo context; not an ML prediction or measured reserve.",
         },
         "dataset": key,
         "nearest_candidate": nearest_candidate,
+        "estimate_kind": "illustrative_capacity_scenario",
+        "scenario_note": (
+            "Reference-scenario values for demo context only: no ore-mineralogy "
+            "or tonnage/yield model exists in this project, so these numbers are "
+            "not ML predictions and not measured reserves."
+        ),
     }
+
+
+# ---------------------------------------------------------------------------
+# C1 -- STAC / raster-sampling integration (previously missing).
+# Thin wrappers over the existing gis_module code; no new acquisition logic.
+# Imports are lazy so this module still loads in minimal environments where
+# rasterio / pystac / planetary-computer are not installed -- in that case
+# the routes report "unavailable" instead of failing at startup.
+# ---------------------------------------------------------------------------
+
+class SampleQuery(BaseModel):
+    lat: float
+    lon: float
+    raster_path: Optional[str] = None
+
+
+class PipelineRunRequest(BaseModel):
+    # Geographic bounding box [min_lon, min_lat, max_lon, max_lat].
+    bbox: list[float]
+    date_range: str = "2024-01-01/2024-05-30"
+    max_cloud: int = 15
+
+
+@app.get("/api/scenes")
+def list_scenes():
+    """Preprocessed satellite scenes visible to gis_module/sampler.py.
+
+    Read-only: lists metadata for every *_preprocessed.tif under
+    data/processed/. Empty until the preprocessing pipeline has been run."""
+    try:
+        from gis_module.sampler import get_available_scenes
+    except ImportError:
+        return {"count": 0, "scenes": [], "status": "sampler_unavailable"}
+    scenes = get_available_scenes()
+    return {
+        "count": len(scenes),
+        "scenes": scenes,
+        "status": "ready" if scenes else "no_preprocessed_scenes",
+    }
+
+
+@app.get("/api/raster/metadata")
+def raster_metadata():
+    """Metadata of the latest preprocessed raster scene, if any.
+
+    Read-only: reports the newest *_preprocessed.tif. No scene is present
+    until the preprocessing pipeline has been run."""
+    try:
+        from gis_module.sampler import get_available_scenes
+    except ImportError:
+        return {"status": "sampler_unavailable", "scene": None}
+    scenes = get_available_scenes()
+    if not scenes:
+        return {"status": "no_preprocessed_scenes", "scene": None}
+    return {"status": "ready", "scene": scenes[0], "count": len(scenes)}
+
+
+@app.post("/api/sample")
+def sample_raster(query: SampleQuery):
+    """Sample the preprocessed raster at one coordinate.
+
+    Read-only against local GeoTIFFs via
+    gis_module/sampler.sample_raster_at_coordinates -- performs no download
+    and runs no ML; outside the active scene it returns the sampler's own
+    regional-estimate fallback."""
+    try:
+        from gis_module.sampler import sample_raster_at_coordinates
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Raster sampler unavailable: gis_module dependencies are not installed.",
+        )
+    return sample_raster_at_coordinates(
+        lat=query.lat, lon=query.lon, raster_path=query.raster_path
+    )
+
+
+@app.post("/api/pipeline/run")
+def pipeline_run(req: PipelineRunRequest):
+    """Run the existing STAC acquisition + preprocessing pipeline.
+
+    Validates the request, then delegates to
+    gis_module/pipeline.run_pipeline (Planetary Computer STAC search,
+    band download, resampling, cloud masking, index extraction). This is
+    network- and compute-heavy by nature: it downloads real satellite data
+    and must only be invoked deliberately, never as part of validation."""
+    if len(req.bbox) != 4:
+        raise HTTPException(
+            status_code=400,
+            detail="bbox must be [min_lon, min_lat, max_lon, max_lat].",
+        )
+    try:
+        from gis_module.pipeline import run_pipeline
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="STAC pipeline unavailable: gis_module dependencies are not installed.",
+        )
+    try:
+        return run_pipeline(
+            bbox=list(req.bbox),
+            date_range=req.date_range,
+            max_cloud=req.max_cloud,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))

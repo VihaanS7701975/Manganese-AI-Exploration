@@ -22,15 +22,25 @@ files under --output-dir.
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import rasterio
 from rasterio.warp import transform_bounds
 from rasterio.windows import Window, from_bounds, transform as window_transform
 
-from load_satellite_data import AOI_PRESETS, resolve_aoi
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Allow both invocation styles: `python src/data_processing/clip_to_aoi.py`
+# (script dir on sys.path, sibling import works) and
+# `python -m src.data_processing.clip_to_aoi` from the project root
+# (package import works). Same pattern as gis_module/pipeline.py.
+for _p in (PROJECT_ROOT, Path(__file__).resolve().parent):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+try:
+    from load_satellite_data import AOI_PRESETS, resolve_aoi
+except ImportError:  # imported as src.data_processing.clip_to_aoi
+    from src.data_processing.load_satellite_data import AOI_PRESETS, resolve_aoi
 
 
 class ClipError(Exception):

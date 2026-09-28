@@ -96,6 +96,7 @@ def sample_raster_at_coordinates(
             "classification": "Medium Potential (Estimated)",
             "ore_type_detected": "Pyrolusite / Braunite Complex",
             "shortfall_metrics": {
+                "estimate_kind": "illustrative_capacity_scenario",
                 "estimated_yield_tons": 120000,
                 "annual_deficit_reduction_pct": 12.0,
                 "extraction_feasibility_score": 7.8
@@ -126,6 +127,7 @@ def sample_raster_at_coordinates(
                 "classification": "Moderate Potential (Regional Estimate)",
                 "ore_type_detected": "Gondite Metasediments",
                 "shortfall_metrics": {
+                    "estimate_kind": "illustrative_capacity_scenario",
                     "estimated_yield_tons": 95000,
                     "annual_deficit_reduction_pct": 9.5,
                     "extraction_feasibility_score": 7.2
@@ -168,6 +170,7 @@ def sample_raster_at_coordinates(
                 "ore_type_detected": "Pyrolusite Complex (Indicated)",
                 "spectral_features": raw_bands,
                 "shortfall_metrics": {
+                    "estimate_kind": "illustrative_capacity_scenario",
                     "estimated_yield_tons": 110000,
                     "annual_deficit_reduction_pct": 11.2,
                     "extraction_feasibility_score": 7.5
@@ -200,20 +203,20 @@ def sample_raster_at_coordinates(
 
         # Ore classification based on spectral signatures
         if calibrated_conf >= 0.85:
-            classification = "High Potential Reserve"
-            ore_type = "Braunite / Pyrolusite High-Grade Complex (>48% Mn)"
+            classification = "High Potential Target"
+            ore_type = "Braunite / Pyrolusite-type response, >48% Mn indicative (not assayed)"
             yield_tons = int(140000 + (calibrated_conf - 0.85) * 300000)
             deficit_pct = round(14.0 + (calibrated_conf - 0.85) * 35.0, 1)
             feasibility = round(8.4 + (calibrated_conf - 0.85) * 8.0, 1)
         elif calibrated_conf >= 0.75:
-            classification = "Medium Potential Reserve"
-            ore_type = "Gondite / Siliceous Manganese Ore (30-45% Mn)"
+            classification = "Medium Potential Target"
+            ore_type = "Gondite / siliceous Mn-ore-type response, 30-45% Mn indicative (not assayed)"
             yield_tons = int(85000 + (calibrated_conf - 0.75) * 450000)
             deficit_pct = round(9.0 + (calibrated_conf - 0.75) * 40.0, 1)
             feasibility = round(7.2 + (calibrated_conf - 0.75) * 10.0, 1)
         else:
             classification = "Low-to-Medium Potential"
-            ore_type = "Manganiferous Quartzite / Lateritic Crust"
+            ore_type = "Manganiferous Quartzite / Lateritic Crust (indicative)"
             yield_tons = int(45000 + calibrated_conf * 50000)
             deficit_pct = round(5.0 + calibrated_conf * 5.0, 1)
             feasibility = round(6.0 + calibrated_conf * 1.5, 1)
@@ -238,8 +241,10 @@ def sample_raster_at_coordinates(
                 "ferrous_index": ferrous_index
             },
             "shortfall_metrics": {
+                "estimate_kind": "illustrative_capacity_scenario",
                 "estimated_yield_tons": yield_tons,
                 "annual_deficit_reduction_pct": deficit_pct,
-                "extraction_feasibility_score": min(feasibility, 9.8)
+                "extraction_feasibility_score": min(feasibility, 9.8),
+                "note": "Heuristic illustration from spectral prospectivity bands, not a measured reserve or calibrated yield model."
             }
         }

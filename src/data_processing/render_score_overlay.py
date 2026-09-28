@@ -48,6 +48,7 @@ derived directly from the raster's own georeferencing -- never fabricated.
 """
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -59,14 +60,29 @@ from rasterio.io import MemoryFile
 from rasterio.transform import rowcol
 from rasterio.warp import transform as warp_transform, transform_bounds
 
-from preprocess_satellite import (
-    find_safe_product,
-    find_granule_dir,
-    find_scl_file,
-    read_aligned,
-)
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Allow both invocation styles: `python src/data_processing/render_score_overlay.py`
+# (script dir on sys.path, sibling import works) and
+# `python -m src.data_processing.render_score_overlay` from the project root
+# (package import works). Same pattern as gis_module/pipeline.py.
+for _p in (PROJECT_ROOT, Path(__file__).resolve().parent):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+try:
+    from preprocess_satellite import (
+        find_safe_product,
+        find_granule_dir,
+        find_scl_file,
+        read_aligned,
+    )
+except ImportError:  # imported as src.data_processing.render_score_overlay
+    from src.data_processing.preprocess_satellite import (
+        find_safe_product,
+        find_granule_dir,
+        find_scl_file,
+        read_aligned,
+    )
+
 OUT_DIR = PROJECT_ROOT / "data" / "processed" / "overlays"
 
 # Same thresholds as frontend/src/potentialLevel.js (HIGH_CUTOFF/MODERATE_CUTOFF).
