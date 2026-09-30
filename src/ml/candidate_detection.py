@@ -231,14 +231,16 @@ def rank_candidates(sites: pd.DataFrame) -> pd.DataFrame:
     return sites
 
 
-PIPELINE_TEST_BANNER = """
+def _provenance_banner(in_path: Path) -> str:
+    return f"""
 ================================================================================
 DATA PROVENANCE NOTICE
-This run's input (data/processed/mineralization_scores.csv) was generated from
-the T45QUE (Keonjhar) Sentinel-2 scene. The candidate sites below are NOT
-evidence of manganese anywhere. They are "potential mineralization / manganese
-exploration target" candidates produced by an unsupervised model that has
-never seen a real manganese location, and every site requires independent
+This run's input ({in_path}) carries forward the anomaly/mineralization
+scores of its own source scene (see the filename and its run's own
+provenance). The candidate sites below are NOT evidence of manganese
+anywhere. They are "potential mineralization / manganese exploration
+target" candidates produced by an unsupervised model that has never seen
+a real manganese location, and every site requires independent
 geological / ground-truth validation before it means anything.
 ================================================================================
 """
@@ -246,6 +248,7 @@ geological / ground-truth validation before it means anything.
 
 def write_report(
     report_path: Path,
+    in_path: Path,
     input_pixels: int,
     selected_pixels: int,
     top_percentile: float,
@@ -255,7 +258,7 @@ def write_report(
     n_noise: int,
     sites: pd.DataFrame,
 ) -> str:
-    lines = [PIPELINE_TEST_BANNER]
+    lines = [_provenance_banner(in_path)]
     lines.append("Potential Mineralization / Manganese Exploration Target Report")
     lines.append("(potential mineralization / manganese exploration target candidates only -- NOT confirmed manganese deposits)")
     lines.append("")
@@ -310,7 +313,7 @@ def write_report(
         lines.append(top10.to_string(index=False))
 
     lines.append("")
-    lines.append(PIPELINE_TEST_BANNER)
+    lines.append(_provenance_banner(in_path))
     text = "\n".join(lines)
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -355,6 +358,7 @@ def run(
 
     report_text = write_report(
         report_path,
+        in_path,
         input_pixels=input_pixels,
         selected_pixels=len(selected),
         top_percentile=top_percentile,

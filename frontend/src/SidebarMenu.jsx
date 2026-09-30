@@ -1,5 +1,5 @@
 import React from 'react';
-import { X } from 'lucide-react';
+import { X, Home } from 'lucide-react';
 
 // Compact per-feature button dock for the left side of the map. Purely
 // presentational/generic: App.jsx supplies each feature's exact existing
@@ -12,7 +12,7 @@ import { X } from 'lucide-react';
 // overrides the default flyout width (e.g. a narrower panel for a compact
 // list). Only one panel renders at a time, and the map stays visible
 // everywhere else.
-export default function SidebarMenu({ sections, activeKey, onToggle }) {
+export default function SidebarMenu({ sections, activeKey, onToggle, onHome }) {
   const active = sections.find((s) => !s.isAction && s.key === activeKey);
 
   return (
@@ -20,6 +20,18 @@ export default function SidebarMenu({ sections, activeKey, onToggle }) {
       {/* BUTTON COLUMN -- fixed compact width, consistent height/spacing.
           Label left-aligned, icon right-aligned (justify-between). */}
       <div className="pointer-events-auto flex flex-col gap-1.5 w-40 shrink-0">
+        {/* HOME -- returns to the landing/entry screen via the app's
+            existing entered/landing state (no reload, no data change). */}
+        {onHome && (
+          <button
+            onClick={onHome}
+            title="Return to home / landing page"
+            className="group flex items-center justify-between gap-1.5 w-full rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold text-left shadow-md transition-all duration-150 ease-out cursor-pointer bg-black/60 border-amber-400/50 text-amber-300 hover:bg-amber-400/10 hover:border-amber-300/80 hover:text-amber-100 hover:shadow-[0_0_12px_rgba(250,204,21,0.25)] hover:-translate-y-0.5"
+          >
+            <span className="truncate">Home</span>
+            <Home className="w-3.5 h-3.5 shrink-0" />
+          </button>
+        )}
         {sections.map((section) => {
           const isActive = !section.isAction && section.key === activeKey;
           const dimmed = activeKey && !isActive;
@@ -31,8 +43,8 @@ export default function SidebarMenu({ sections, activeKey, onToggle }) {
               title={section.tooltip ?? section.label}
               className={`group flex items-center justify-between gap-1.5 w-full rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold text-left shadow-md transition-all duration-150 ease-out cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed disabled:translate-y-0 disabled:hover:translate-y-0 ${
                 isActive
-                  ? 'bg-purple-500/25 border-purple-400/70 text-white shadow-[0_0_10px_rgba(168,85,247,0.35)]'
-                  : `bg-slate-900/60 border-purple-500/25 text-slate-200 hover:bg-purple-500/15 hover:border-purple-400/50 hover:text-white hover:-translate-y-0.5 ${
+                  ? 'bg-black/70 border-amber-300 text-amber-200 shadow-[0_0_14px_rgba(250,204,21,0.35)]'
+                  : `bg-black/60 border-amber-400/50 text-amber-300 hover:bg-amber-400/10 hover:border-amber-300/80 hover:text-amber-100 hover:shadow-[0_0_12px_rgba(250,204,21,0.25)] hover:-translate-y-0.5 ${
                       dimmed ? 'opacity-70' : 'opacity-100'
                     }`
               }`}

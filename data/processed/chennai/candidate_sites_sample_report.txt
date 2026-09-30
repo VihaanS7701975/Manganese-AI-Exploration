@@ -1,0 +1,52 @@
+
+================================================================================
+DATA PROVENANCE NOTICE
+This run's input (data\processed\chennai\mineralization_scores_sample.csv) carries forward the anomaly/mineralization
+scores of its own source scene (see the filename and its run's own
+provenance). The candidate sites below are NOT evidence of manganese
+anywhere. They are "potential mineralization / manganese exploration
+target" candidates produced by an unsupervised model that has never seen
+a real manganese location, and every site requires independent
+geological / ground-truth validation before it means anything.
+================================================================================
+
+Potential Mineralization / Manganese Exploration Target Report
+(potential mineralization / manganese exploration target candidates only -- NOT confirmed manganese deposits)
+
+Input pixels (all anomaly scores):        300691
+Selection threshold:                       top 1.0% (by anomaly_percentile)
+Anomalous pixels selected:                 3007
+Estimated native pixel spacing:             128.06 m
+DBSCAN eps:                                 150.0 m
+DBSCAN min_samples:                         5
+Pixels excluded as spatial noise (label -1): 2509
+Candidate clusters produced:                53
+
+Cluster size (pixel_count): min=5, median=6.0, max=130, mean=9.4
+Anomaly score across candidate pixels: max=0.198972, min of per-cluster means=0.066955
+Mineralization score across candidate sites: max=80.21, min of per-cluster means=44.70
+
+Top 10 candidate sites (ranked by rank_score = 0.35*strength_percentile + 0.25*density_percentile + 0.4*mineralization_percentile):
+candidate_id  rank  pixel_count  centroid_longitude  centroid_latitude  max_anomaly_score  mean_anomaly_score  mean_mineralization_score  max_mineralization_score  mineralization_percentile  rank_score
+   CAND_0001     1            7           80.079656          13.218229           0.188537            0.167952                  56.893592                 72.508015                  98.335833   88.815465
+   CAND_0002     2           10           80.261324          13.225761           0.186129            0.165761                  63.213477                 80.206186                  99.949450   88.800535
+   CAND_0003     3           14           80.164313          12.982910           0.193510            0.152672                  65.699667                 75.823803                  99.438626   85.954696
+   CAND_0004     4           10           80.089132          13.221986           0.179454            0.165425                  48.099786                 65.943114                  94.450782   85.940690
+   CAND_0005     5            8           80.257630          13.186960           0.181672            0.144090                  67.937452                 79.038431                  99.892248   84.815390
+   CAND_0006     6            5           80.189214          13.012363           0.186874            0.183668                  52.583107                 55.909804                  84.356698   84.544566
+   CAND_0007     7            7           80.087017          13.138844           0.180321            0.150889                  61.748430                 70.570073                  97.516387   84.525423
+   CAND_0008     8           11           80.078975          13.135094           0.179936            0.139891                  63.978765                 76.525594                  99.584291   84.031830
+   CAND_0009     9            5           80.310634          13.180679           0.186781            0.158402                  53.666033                 63.784949                  92.560469   83.863810
+   CAND_0010    10            5           80.264951          13.058558           0.194369            0.173015                  47.494448                 50.952944                  78.241451   81.438090
+
+
+================================================================================
+DATA PROVENANCE NOTICE
+This run's input (data\processed\chennai\mineralization_scores_sample.csv) carries forward the anomaly/mineralization
+scores of its own source scene (see the filename and its run's own
+provenance). The candidate sites below are NOT evidence of manganese
+anywhere. They are "potential mineralization / manganese exploration
+target" candidates produced by an unsupervised model that has never seen
+a real manganese location, and every site requires independent
+geological / ground-truth validation before it means anything.
+================================================================================

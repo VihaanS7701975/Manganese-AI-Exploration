@@ -1,9 +1,10 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -26,15 +27,16 @@ app.add_middleware(
 #
 # "t45que" is the original/default dataset (unchanged path, unchanged
 # behavior for any caller that doesn't pass a dataset). "chennai" is the
-# AOI-clipped, geographically-validated Chennai run
-# (data/processed/chennai/candidate_sites.csv, 689 candidates) -- NOT the
-# earlier stale 3,549-candidate pre-clip result, which lived at the same
-# path before being regenerated and is no longer on disk.
+# sample-derived Chennai run (data/processed/chennai/candidate_sites_sample.csv,
+# 53 candidates from a deterministic 1-in-55 systematic spatial sample of the
+# real 16.5M-row Chennai feature table -- see
+# data/processed/chennai/SAMPLE_NOTE.json). Sample files keep *_sample.csv
+# names and never overwrite canonical full-scene filenames.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = "t45que"
 DATASET_PATHS = {
     "t45que": PROJECT_ROOT / "data" / "processed" / "candidate_sites.csv",
-    "chennai": PROJECT_ROOT / "data" / "processed" / "chennai" / "candidate_sites.csv",
+    "chennai": PROJECT_ROOT / "data" / "processed" / "chennai" / "candidate_sites_sample.csv",
 }
 
 CANDIDATES = {
@@ -44,11 +46,12 @@ CANDIDATES = {
 
 # Optional, purely additive "manganese evidence" layer (manganese_evidence.py
 # output) -- diagnostic only, NOT a manganese-specific detector. Currently
-# only exists for chennai; t45que has none, so its candidates keep returning
+# only exists for chennai (sample-derived, matching the sample candidate set);
+# t45que has none, so its candidates keep returning
 # exactly what they did before this field was introduced (manganese fields
 # simply absent/null). Never modifies CANDIDATES or any existing field.
 EVIDENCE_PATHS = {
-    "chennai": PROJECT_ROOT / "data" / "processed" / "chennai" / "manganese_evidence.csv",
+    "chennai": PROJECT_ROOT / "data" / "processed" / "chennai" / "manganese_evidence_sample.csv",
 }
 EVIDENCE = {
     key: (pd.read_csv(path) if path.is_file() else None)
@@ -177,6 +180,230 @@ def list_candidates(
         "limit": limit,
         "candidates": records,
         "dataset": key,
+    }
+
+
+class AoiSearchQuery(BaseModel):
+    # Which candidate dataset to search. Defaults to the active-dataset
+    # convention used elsewhere in this module.
+    dataset: str = DEFAULT_DATASET
+    # Axis-aligned search box in WGS84 degrees (from a rectangle draw,
+    # a place search, or a polygon's own bounds).
+    bbox: Optional[dict] = None  # {lon_min, lat_min, lon_max, lat_max}
+    # Polygon ring as [[lat, lon], ...] (from a polygon draw). When
+    # present with >= 3 vertices, candidates are additionally tested
+    # against the ring (ray-cast); the bbox is still applied first.
+    polygon: Optional[list] = None
+    # Cap on returned rows (rank order); total/count always reflect the
+    # full in-AOI match regardless of this cap.
+    limit: int = 50
+
+
+def _point_in_ring(lat: float, lon: float, ring) -> bool:
+    inside = False
+    n = len(ring)
+    for i in range(n):
+        yi, xi = ring[i][0], ring[i][1]
+        yj, xj = ring[(i + 1) % n][0], ring[(i + 1) % n][1]
+        if ((yi > lat) != (yj > lat)) and (
+            lon < ((xj - xi) * (lat - yi) / (yj - yi) + xi)
+        ):
+            inside = not inside
+    return inside
+
+
+@app.get("/api/report.pdf")
+def exploration_report_pdf(
+    dataset: str = DEFAULT_DATASET,
+    limit: int = 25,
+    candidate_id: Optional[str] = None,
+    bbox: Optional[str] = None,
+):
+    """Professional multi-page PDF exploration report (Task: full PDF).
+
+    Assembled read-only from the same real payloads as /api/report,
+    /api/temporal/persistence and /api/aoi/search, rendered server-side
+    with matplotlib only (no new dependencies). Optional `candidate_id`
+    features one candidate's ExplainableAI breakdown; optional `bbox`
+    ("lon_min,lat_min,lon_max,lat_max") scopes the AOI-results section
+    via the real aoi_search path. Unavailable images/sections are
+    labelled, never fabricated."""
+    try:
+        from backend.report_pdf import render_exploration_pdf
+    except ImportError:
+        try:
+            from report_pdf import render_exploration_pdf
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"PDF renderer unavailable: {exc}",
+            )
+    key = _resolve_dataset(dataset)
+    rep = exploration_report(dataset=key, limit=limit)
+    persist = temporal_persistence(dataset=key)
+
+    selected = None
+    if candidate_id:
+        df = CANDIDATES[key]
+        match = df.loc[df["candidate_id"] == candidate_id]
+        if not match.empty:
+            rec = json.loads(match.iloc[[0]].to_json(orient="records"))[0]
+            evidence = _manganese_evidence(key, rec.get("candidate_id"))
+            if evidence:
+                rec.update(evidence)
+            selected = rec
+
+    aoi_result = None
+    if bbox:
+        try:
+            parts = [float(x) for x in bbox.split(",")]
+            if len(parts) != 4:
+                raise ValueError
+            lon_min, lat_min, lon_max, lat_max = parts
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="bbox must be lon_min,lat_min,lon_max,lat_max with numeric values.",
+            )
+        search = aoi_search(AoiSearchQuery(
+            dataset=key,
+            bbox={"lon_min": lon_min, "lat_min": lat_min,
+                  "lon_max": lon_max, "lat_max": lat_max},
+            limit=10,
+        ))
+        top = search.get("top") or {}
+        aoi_result = {
+            "count": search.get("count", 0),
+            "top_id": top.get("candidate_id"),
+            "top_rank": top.get("rank"),
+            "top_score": top.get("rank_score"),
+        }
+
+    overlay_png = OVERLAYS_DIR / f"{key}_score_overlay.png"
+    scenes = ((rep.get("imagery") or {}).get("scenes")) or []
+    payload = {
+        "dataset": key,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "candidate_count": rep.get("candidate_count", 0),
+        "scene_summary": ("; ".join(
+            f"{s.get('scene_id')} ({s.get('sensing_date') or 'date n/a'})"
+            for s in scenes) or "none on disk"),
+        "aoi": rep.get("aoi"),
+        "imagery": rep.get("imagery"),
+        "methodology": rep.get("methodology"),
+        "rank_weights": rep.get("rank_weights"),
+        "mineralization_weights": None,
+        "sample_note": None,
+        "candidates": rep.get("candidates") or [],
+        "selected_candidate": selected,
+        "aoi_result": aoi_result,
+        "temporal": {
+            "scenes": persist.get("scenes") or [],
+            "summary": persist.get("summary") or {},
+        },
+        "overlay_path": str(overlay_png) if overlay_png.is_file() else None,
+        "generated_note": rep.get("generated_note"),
+        "limitations": rep.get("limitations"),
+        "shortfall_note": rep.get("shortfall_note"),
+    }
+    try:
+        from backend.temporal import MINERALIZATION_WEIGHTS
+    except ImportError:
+        try:
+            from temporal import MINERALIZATION_WEIGHTS
+        except ImportError:
+            MINERALIZATION_WEIGHTS = None
+    payload["mineralization_weights"] = MINERALIZATION_WEIGHTS
+    if key == "chennai":
+        payload["sample_note"] = (
+            "Chennai candidates are derived from a deterministic 1-in-55 "
+            "systematic spatial sample of the real scene feature table "
+            "(see data/processed/chennai/SAMPLE_NOTE.json) — sample "
+            "results, not a full-scene run.")
+    try:
+        pdf_bytes = render_exploration_pdf(payload)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"PDF rendering failed: {exc}")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition":
+                 f"attachment; filename=exploration_report_{key}.pdf"},
+    )
+
+
+@app.post("/api/aoi/search")
+def aoi_search(query: AoiSearchQuery):
+    """Candidates of one dataset filtered to a user-drawn AOI.
+
+    Read-only over the already-loaded candidate table: bbox pre-filter,
+    then optional polygon ring test. Returns matches in rank order with
+    an explicit empty state (count 0) when nothing falls inside --
+    never a fabricated result."""
+    key = _resolve_dataset(query.dataset)
+    df = CANDIDATES[key]
+    if df.empty:
+        return {
+            "dataset": key, "count": 0, "total": 0,
+            "candidates": [], "top": None,
+            "note": "No candidate data for this dataset yet.",
+        }
+    if not query.bbox and not query.polygon:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide 'bbox' ({lon_min, lat_min, lon_max, lat_max}) and/or 'polygon' ([[lat, lon], ...]).",
+        )
+    work = df
+    if query.bbox:
+        try:
+            b = {k: float(query.bbox[k]) for k in ("lon_min", "lat_min", "lon_max", "lat_max")}
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(
+                status_code=400,
+                detail="bbox must be {lon_min, lat_min, lon_max, lat_max} with numeric values.",
+            )
+        if b["lon_min"] >= b["lon_max"] or b["lat_min"] >= b["lat_max"]:
+            raise HTTPException(
+                status_code=400,
+                detail="bbox must satisfy lon_min < lon_max and lat_min < lat_max.",
+            )
+        work = work[
+            (work["centroid_longitude"] >= b["lon_min"])
+            & (work["centroid_longitude"] <= b["lon_max"])
+            & (work["centroid_latitude"] >= b["lat_min"])
+            & (work["centroid_latitude"] <= b["lat_max"])
+        ]
+    ring = None
+    if query.polygon:
+        if len(query.polygon) < 3:
+            raise HTTPException(
+                status_code=400,
+                detail="polygon needs at least 3 vertices.",
+            )
+        ring = query.polygon
+        mask = [
+            _point_in_ring(float(la), float(lo), ring)
+            for lo, la in zip(work["centroid_longitude"], work["centroid_latitude"])
+        ]
+        work = work[pd.Series(mask, index=work.index)]
+    total = len(work)
+    ranked = work.sort_values("rank").head(max(query.limit, 0)) if query.limit > 0 else work.sort_values("rank")
+    records = json.loads(ranked.to_json(orient="records"))
+    for rec in records:
+        evidence = _manganese_evidence(key, rec.get("candidate_id"))
+        if evidence:
+            rec.update(evidence)
+    top = records[0] if records else None
+    return {
+        "dataset": key,
+        "count": total,
+        "total": total,
+        "limit": query.limit,
+        "candidates": records,
+        "top": top,
+        "bbox": query.bbox,
+        "polygon_vertices": len(ring) if ring else 0,
     }
 
 
@@ -396,3 +623,205 @@ def pipeline_run(req: PipelineRunRequest):
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# F1/F6/F12 -- workflow status, multi-date observations, exploration report.
+# Read-only assembly over files on disk; honest empty states when the
+# processing chain has not been run. No downloads, no ML execution.
+# ---------------------------------------------------------------------------
+
+try:
+    from backend.temporal import (
+        LIMITATIONS,
+        METHODOLOGY,
+        RANK_WEIGHTS,
+        compute_persistence,
+        list_observations,
+        parse_safe_date,
+    )
+except ImportError:  # backend run as top-level script directory
+    from temporal import (
+        LIMITATIONS,
+        METHODOLOGY,
+        RANK_WEIGHTS,
+        compute_persistence,
+        list_observations,
+        parse_safe_date,
+    )
+
+# Raw download roots per dataset (mirrors load_satellite_data --out-root
+# convention) and per-dataset processed stage files (mirrors
+# preprocess_satellite OUT_DIR, render_score_overlay DATASETS).
+RAW_ROOTS = {
+    "t45que": PROJECT_ROOT / "data" / "raw" / "satellite_images",
+    "chennai": PROJECT_ROOT / "data" / "raw" / "chennai",
+}
+PROCESSED_ROOTS = {
+    "t45que": PROJECT_ROOT / "data" / "processed",
+    "chennai": PROJECT_ROOT / "data" / "processed" / "chennai",
+}
+def _stage_paths(key: str):
+    proot = PROCESSED_ROOTS[key]
+    if key == "t45que":
+        overlay = PROJECT_ROOT / "data" / "processed" / "overlays" / "t45que_score_overlay.png"
+        anomalies = proot / "manganese_anomalies.csv"
+        mineralization = proot / "mineralization_scores.csv"
+    else:
+        # Chennai: full-scene ml_features.csv exists (16.5M rows); the
+        # downstream anomaly/mineralization stages were run on a documented
+        # 1-in-55 systematic sample only (see SAMPLE_NOTE.json), so the
+        # sample filenames are the honest availability signal here.
+        overlay = PROJECT_ROOT / "data" / "processed" / "overlays" / "chennai_score_overlay.png"
+        anomalies = proot / "manganese_anomalies_sample.csv"
+        mineralization = proot / "mineralization_scores_sample.csv"
+    return {
+        "imagery_downloaded": None,
+        "preprocessed": proot / "cleaned_images" / "B02.tif",
+        "preprocessed_aoi": proot / "cleaned_images_aoi" / "B02.tif",
+        "features": proot / "ml_features.csv",
+        "anomalies": anomalies,
+        "mineralization": mineralization,
+        "candidates": DATASET_PATHS[key],
+        "overlay": overlay,
+    }
+
+
+@app.get("/api/workflow/status")
+def workflow_status(dataset: str = DEFAULT_DATASET):
+    """Per-stage availability for the one-click exploration workflow (F1).
+
+    Reports which pipeline stages have outputs on disk for the dataset so
+    the UI can show real progress and honest next steps. Pure existence
+    checks -- no computation, no downloads."""
+    key = _resolve_dataset(dataset)
+    raw_root = RAW_ROOTS[key]
+    safes = sorted(p.name for p in raw_root.glob("*.SAFE")) if raw_root.is_dir() else []
+    stages = {"imagery_downloaded": len(safes) > 0}
+    paths = _stage_paths(key)
+    for name, path in paths.items():
+        if name == "imagery_downloaded":
+            continue
+        stages[name] = bool(path and path.is_file())
+    return {
+        "dataset": key,
+        "stages": stages,
+        "scenes": [
+            {"scene_id": s, "sensing_date": parse_safe_date(s)} for s in safes
+        ],
+        "candidate_count": int(len(CANDIDATES[key])),
+        "ready_for_demo": stages["candidates"],
+    }
+
+
+@app.get("/api/temporal/scenes")
+def temporal_scenes():
+    """Multi-date observation registry (F6): raw scenes + processed
+    candidate availability per dataset. Missing files reported as missing."""
+    return {
+        "observations": list_observations(PROJECT_ROOT, DATASET_PATHS, RAW_ROOTS),
+        "note": "Persistence across dates is remote-sensing supporting evidence, "
+        "not geological confirmation of manganese.",
+    }
+
+
+@app.get("/api/temporal/persistence")
+def temporal_persistence(dataset: str = DEFAULT_DATASET, threshold_m: float = 150.0):
+    """Cross-observation persistence for one dataset's candidates (F6).
+
+    Matches each candidate of the requested dataset against every other
+    loaded dataset/observation within threshold_m metres. Supporting
+    scenes are remote-sensing evidence ONLY, never geological
+    confirmation. Honestly reports single-observation state when no other
+    observation overlaps."""
+    key = _resolve_dataset(dataset)
+    df = CANDIDATES[key]
+    if df.empty:
+        return {
+            "dataset": key,
+            "threshold_m": threshold_m,
+            "scenes": [],
+            "persistent": [],
+            "summary": {"total": 0, "persistent_count": 0,
+                        "note": "No processed candidates for this dataset yet."},
+        }
+    # All non-empty datasets act as observations (t45que, chennai, ...).
+    # compute_persistence matches across keys; we then scope the per-row
+    # list to the requested dataset while keeping cross-scene support.
+    dfs = {k: v for k, v in CANDIDATES.items() if v is not None and not v.empty}
+    result = compute_persistence(dfs, threshold_m=threshold_m)
+    scoped = [p for p in result.get("persistent", []) if p.get("scene") == key]
+    pcount = sum(1 for p in scoped if p.get("persistent"))
+    summary = {
+        "total": len(scoped),
+        "persistent_count": pcount,
+    }
+    if len(result.get("scenes", [])) < 2:
+        summary["single_scene_note"] = (
+            "Only one observation available; persistence needs 2+ dates "
+            "over the same ground."
+        )
+    elif pcount == 0:
+        summary["note"] = (
+            "No cross-observation matches within threshold; observations "
+            "cover different ground and/or different dates."
+        )
+    result["persistent"] = scoped
+    result["summary"] = summary
+    result["dataset"] = key
+    return result
+
+
+@app.get("/api/report")
+def exploration_report(dataset: str = DEFAULT_DATASET, limit: int = 25):
+    """Automatic exploration report payload (F12): AOI, imagery, dates,
+    methodology, ranked candidates, evidence, limitations. All values come
+    from files on disk or static methodology notes; illustrative figures
+    stay labelled as such."""
+    key = _resolve_dataset(dataset)
+    df = CANDIDATES[key]
+    aoi = AOI_BOUNDS[key]
+    obs = list_observations(PROJECT_ROOT, {key: DATASET_PATHS[key]}, RAW_ROOTS)
+    top = df.sort_values("rank_score", ascending=False).head(max(limit, 0)) \
+        if not df.empty and "rank_score" in df.columns else df.head(0)
+    cand_rows = json.loads(top.to_json(orient="records"))
+    for rec in cand_rows:
+        evidence = _manganese_evidence(key, rec.get("candidate_id"))
+        if evidence:
+            rec.update(evidence)
+    return {
+        "dataset": key,
+        "generated_note": "Assembled read-only from pipeline outputs on disk; "
+        "regenerate after re-running the chain.",
+        "aoi": aoi,
+        "aoi_note": "Bounds of this dataset's own candidates plus margin; "
+        "not a mineral-prospectivity boundary." if aoi else None,
+        "imagery": obs[0] if obs else None,
+        "methodology": METHODOLOGY,
+        "rank_weights": RANK_WEIGHTS,
+        "candidate_count": int(len(df)),
+        "candidates": cand_rows,
+        "shortfall_basis": "illustrative_capacity_scenario",
+        "shortfall_note": "Yield/deficit/feasibility figures are static "
+        "reference-scenario values for demo context, not ML predictions.",
+        "limitations": LIMITATIONS,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Desktop-packaging entrypoint (Electron/PyInstaller glue only -- no
+# scientific logic). Lets the packaged backend serve itself
+# (`manganese-backend.exe --port 8000`) instead of requiring
+# `python -m uvicorn backend.main:app`. `import backend.main` behavior is
+# unchanged.
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    import argparse
+
+    import uvicorn
+
+    _parser = argparse.ArgumentParser(description="Serve the Manganese AI API.")
+    _parser.add_argument("--host", default="127.0.0.1")
+    _parser.add_argument("--port", type=int, default=8000)
+    _args = _parser.parse_args()
+    uvicorn.run(app, host=_args.host, port=_args.port, log_level="warning")

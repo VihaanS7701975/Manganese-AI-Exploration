@@ -1,0 +1,16 @@
+{
+  "name": "manganese-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Desktop shell for the Manganese AI Exploration platform (Electron + packaged Vite build + FastAPI backend).",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package": "electron-builder --dir --config builder.json",
+    "dist": "electron-builder --config builder.json"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  }
+}

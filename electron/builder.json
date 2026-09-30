@@ -1,0 +1,44 @@
+{
+  "appId": "ai.geomanganese.explorer",
+  "productName": "GeoManganese AI",
+  "win": {
+    "target": [
+      "nsis",
+      "portable"
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  },
+  "files": [
+    "main.js",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "../frontend/dist",
+      "to": "project/frontend/dist"
+    },
+    {
+      "from": "../backend",
+      "to": "project/backend",
+      "filter": [
+        "**/*.py"
+      ]
+    },
+    {
+      "from": "../data/processed",
+      "to": "project/data/processed",
+      "filter": [
+        "candidate_sites.csv",
+        "candidate_sites_report.txt",
+        "overlays/**/*",
+        "chennai/candidate_sites_sample.csv",
+        "chennai/candidate_sites_sample_report.txt",
+        "chennai/manganese_evidence_sample.csv",
+        "chennai/SAMPLE_NOTE.json"
+      ]
+    }
+  ]
+}

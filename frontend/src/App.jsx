@@ -6,6 +6,7 @@ import {
   Marker,
   Popup,
   Polygon,
+  CircleMarker,
   Tooltip as LeafletTooltip,
   useMapEvents,
   useMap
@@ -44,8 +45,18 @@ import TopTargetsPanel from './TopTargetsPanel.jsx';
 import SidebarMenu from './SidebarMenu.jsx';
 import HowItWorks from './HowItWorks.jsx';
 import CandidateScoreBreakdown from './CandidateScoreBreakdown.jsx';
-import { LEVEL_EMOJI, LEVEL_DOT_CLASS, LEVEL_RANGE_LABEL } from './potentialLevel.js';
+import { LEVEL_EMOJI, LEVEL_DOT_CLASS, LEVEL_RANGE_LABEL, levelOf } from './potentialLevel.js';
 import { API_BASE_URL, apiUrl } from './apiConfig.js';
+import { aoiToPipeline } from './aoi.js';
+import AoiSelector from './AoiSelector.jsx';
+import WorkflowPanel from './WorkflowPanel.jsx';
+import Assistant from './Assistant.jsx';
+import TemporalPanel from './TemporalPanel.jsx';
+import LayersPanel from './LayersPanel.jsx';
+import ReportView from './ReportView.jsx';
+import ComparisonView from './ComparisonView.jsx';
+import DemoMode from './DemoMode.jsx';
+import Landing from './Landing.jsx';
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -228,17 +239,19 @@ const MANGANESE_BELTS = [
 // depends on the map's prior zoom state.
 const CORRIDOR_ZOOM = 9;
 
-// The real Chennai processing/search AOI (west=79.95, south=12.85,
-// east=80.45, north=13.25 -- AOI_PRESETS["chennai"] in
-// src/data_processing/load_satellite_data.py). This is the actual AOI the
-// 689 real candidates were generated within -- NOT a fabricated
+// The real Chennai processing/search AOI: the west edge of the
+// AOI_PRESETS["chennai"] search box (lon 79.95) falls outside the actual
+// Sentinel-2 tile 44PMV coverage, so clip_to_aoi.py clamped it to what the
+// raster really covers. These are the real clipped bounds (see the clip
+// validation: west=80.076575, south=12.849033, east=80.450822,
+// north=13.251645, rounded outward to the pixel grid) -- NOT a fabricated
 // confidence/tier boundary like MANGANESE_BELTS' polygons, so it is kept
 // separate from that array and rendered with plain, static styling.
 const CHENNAI_AOI_BOUNDS = [
-  [12.85, 79.95], // SW
-  [12.85, 80.45], // SE
-  [13.25, 80.45], // NE
-  [13.25, 79.95], // NW
+  [12.849, 80.077], // SW
+  [12.849, 80.451], // SE
+  [13.252, 80.451], // NE
+  [13.252, 80.077], // NW
 ];
 
 
@@ -249,8 +262,9 @@ const CHENNAI_AOI_BOUNDS = [
 // would visually imply an AI survey result that doesn't exist.
 //
 // Chennai now DOES have a real candidate dataset (data/processed/chennai/
-// candidate_sites.csv, 689 AOI-clipped, geographically-validated
-// candidates -- see backend/main.py's DATASET_PATHS['chennai']), so
+// candidate_sites_sample.csv, 53 candidates from a deterministic 1-in-55
+// systematic spatial sample of the real Chennai feature table -- see
+// data/processed/chennai/SAMPLE_NOTE.json), so
 // selecting it switches the active dataset to 'chennai' and re-centers on
 // Chennai's real published city coordinates; the existing real prediction
 // flow then returns a real nearest-candidate result from that dataset
@@ -333,11 +347,46 @@ export default function App() {
   // exists for this dataset.
   const [pixelOverlay, setPixelOverlay] = useState(null);
   // Which candidate dataset/AOI is currently active: 't45que' (original,
-  // default -- preserves exact existing behavior) or 'chennai' (the
-  // AOI-clipped, 689-candidate Chennai run). Passed through to the existing
+  // default -- preserves exact existing behavior) or 'chennai' (53
+  // sample-derived candidates -- see SAMPLE_NOTE.json). Passed through to
   // /api/predict and /api/candidates endpoints via their new optional
   // `dataset` parameter; nothing else about those endpoints changes.
   const [selectedDataset, setSelectedDataset] = useState('t45que');
+  // F2 AOI state: {kind,label,center,bbox,polygon,dataset} or null.
+  const [aoi, setAoi] = useState(null);
+  // F2 draw state: null | 'rectangle' | 'polygon', plus clicked points.
+  const [drawMode, setDrawMode] = useState(null);
+  const [drawnPoints, setDrawnPoints] = useState([]);
+  // AOI search result from POST /api/aoi/search (server-side filter of
+  // the active dataset's candidate table): {count, top, bbox} or null.
+  const [aoiResult, setAoiResult] = useState(null);
+  const [aoiLoading, setAoiLoading] = useState(false);
+  const [aoiError, setAoiError] = useState(null);
+  // F7 layer visibility (unavailable layers stay false; see layerAvailability).
+  const [layers, setLayers] = useState({
+    overlay: true, candidates: false, reference: true, aoi: true, labels: true,
+    rgb: false, nir: false, swir: false, cloud: false,
+  });
+  const toggleLayer = (key) => setLayers((p) => ({ ...p, [key]: !p[key] }));
+  // F1 workflow status payload from /api/workflow/status.
+  const [workflow, setWorkflow] = useState(null);
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+  // F6 temporal state: observations + persistence payload.
+  const [scenes, setScenes] = useState([]);
+  const [temporal, setTemporal] = useState(null);
+  const [temporalLoading, setTemporalLoading] = useState(false);
+  // F12 report payload from /api/report.
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  // F14: real Chennai dataset size (limit=1, totals only) so the
+  // comparison panel can label Chennai honestly instead of guessing.
+  // null = not loaded yet; 0 = registered area, no candidate data on disk.
+  const [chennaiTotal, setChennaiTotal] = useState(null);
+  // F15 demo mode.
+  const [demoOpen, setDemoOpen] = useState(false);
+  // Landing page gate: false until the user enters the exploration app
+  // (all app state/routes mount regardless -- this only overlays entry).
+  const [entered, setEntered] = useState(false);
 
   // `dataset` is optional: omit it (e.g. a plain map click) to query
   // whichever dataset is currently active; pass it explicitly (corridor /
@@ -364,9 +413,197 @@ export default function App() {
     }
   };
 
+  // F2 map-click routing: drawing captures clicks as AOI vertices,
+  // otherwise a click probes the active dataset (unchanged behavior).
+  const handleMapClick = (lat, lon) => {
+    if (drawMode === 'rectangle') {
+      setDrawnPoints((p) => (p.length >= 2 ? [{ lat, lon }] : [...p, { lat, lon }]));
+      return;
+    }
+    if (drawMode === 'polygon') {
+      setDrawnPoints((p) => (p.length >= 64 ? p : [...p, { lat, lon }]));
+      return;
+    }
+    fetchPrediction(lat, lon);
+  };
+
+  // AOI search via the backend (/api/aoi/search): sends the drawn/
+  // selected geometry and the active dataset, returns matching candidates
+  // in rank order. Loading, empty (count 0) and error states are all
+  // explicit -- nothing is fabricated when the AOI has no candidates.
+  const analyzeAoi = async () => {
+    if (!aoi?.bbox && !aoi?.polygon) return;
+    setAoiLoading(true);
+    setAoiError(null);
+    try {
+      const response = await fetch(apiUrl('/api/aoi/search'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataset: selectedDataset,
+          bbox: aoi.bbox ?? null,
+          polygon: aoi.polygon ?? null,
+          limit: 50,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
+      setAoiResult({ count: data.count ?? 0, top: data.top ?? null, bbox: aoi.bbox ?? null });
+    } catch (err) {
+      console.error('Failed to search AOI:', err);
+      setAoiError(err?.message || 'AOI search failed');
+      setAoiResult(null);
+    } finally {
+      setAoiLoading(false);
+    }
+  };
+
+  // F7 layer availability from real loaded state (no fabrication).
+  const layerAvailability = {
+    overlay: !!pixelOverlay,
+    candidates: candidates.length > 0,
+    reference: true,
+    aoi: !!aoi || drawnPoints.length > 0,
+    labels: true,
+    rgb: false, nir: false, swir: false, cloud: false,
+  };
+
+  // F14: corridors + Chennai registered as a comparison area. Chennai
+  // reuses its real exploration AOI (CHENNAI_AOI_BOUNDS, [lat,lon] like
+  // every MANGANESE_BELTS ring) and carries no fabricated tier/confidence.
+  // emptyNote/fixedCount come from the real /api/candidates total, so the
+  // row degrades honestly when no Chennai candidate data exists on disk.
+  const chennaiPlace = EXTRA_LOCATIONS.find((p) => p.id === 'chennai');
+  const comparisonBelts = chennaiPlace
+    ? [...MANGANESE_BELTS, {
+        ...chennaiPlace,
+        coords: CHENNAI_AOI_BOUNDS,
+        ...(chennaiTotal === null
+          ? {}
+          : chennaiTotal > 0
+            ? { fixedCount: chennaiTotal }
+            : { emptyNote: 'no candidate data' }),
+      }]
+    : MANGANESE_BELTS;
+
+  // F7: top-200 ranked candidates as map markers (honest subset cap).
+  const mapCandidates = (candidates || []).slice().sort((a, b) => a.rank - b.rank).slice(0, 200);
+  const candidateColor = (score) => (score >= 75 ? '#ef4444' : score >= 50 ? '#eab308' : '#22c55e');
+
+  // F5/F6: cross-date support for the currently predicted candidate.
+  const persistenceFor = (candidateId) => {
+    if (!candidateId || !temporal?.persistent) return null;
+    const m = temporal.persistent.find((p) => p.candidate_id === candidateId);
+    return m ? { support_count: m.support_count } : { support_count: 0 };
+  };
+
+  // F1: query real pipeline-stage availability for the active dataset.
+  const checkWorkflowStatus = async () => {
+    setWorkflowLoading(true);
+    try {
+      const response = await fetch(apiUrl(`/api/workflow/status?dataset=${selectedDataset}`));
+      setWorkflow(await response.json());
+    } catch (err) {
+      console.error('Failed to fetch workflow status:', err);
+    } finally {
+      setWorkflowLoading(false);
+    }
+  };
+
+  // F1: focus results on the map and open the Rank Index.
+  const showWorkflowResults = () => {
+    if (aoi) setSelectedCoords({ lat: aoi.center.lat, lon: aoi.center.lon, zoom: 10 });
+    setRankIndexOpen(true);
+  };
+
+  // F1: deliberate acquisition only (called after explicit confirmation).
+  const acquireImagery = async (bbox) => {
+    const response = await fetch(apiUrl('/api/pipeline/run'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(aoiToPipeline(bbox)),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.detail || `HTTP ${response.status}`);
+    checkWorkflowStatus();
+    return `Submitted — scene ${data.scene_id} (${data.cloud_cover}% cloud). Preprocessing status will update on next check.`;
+  };
+
+  // F6: load observations + persistence for the active dataset.
+  const loadTemporal = async () => {
+    setTemporalLoading(true);
+    try {
+      const s = await fetch(apiUrl('/api/temporal/scenes'));
+      const sj = await s.json();
+      setScenes(Array.isArray(sj.observations) ? sj.observations : []);
+      const p = await fetch(apiUrl(`/api/temporal/persistence?dataset=${selectedDataset}`));
+      setTemporal(await p.json());
+    } catch (err) {
+      console.error('Failed to fetch temporal data:', err);
+    } finally {
+      setTemporalLoading(false);
+    }
+  };
+
+  // F12: assemble the exploration report payload.
+  const loadReport = async () => {
+    setReportLoading(true);
+    try {
+      const response = await fetch(apiUrl(`/api/report?dataset=${selectedDataset}&limit=25`));
+      setReport(await response.json());
+    } catch (err) {
+      console.error('Failed to fetch report:', err);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  // F15: per-step demo actions reusing existing flows (no new navigation).
+  const handleDemoStep = (action) => {
+    if (action === 'aoi') {
+      setActiveSection('aoi');
+      fetchPrediction(13.0827, 80.2707, 11, 'chennai');
+    } else if (action === 'coverage') {
+      setBasemap('satellite');
+      setActiveSection('workflow');
+      checkWorkflowStatus();
+    } else if (action === 'analysis') {
+      setActiveSection('analytics');
+    } else if (action === 'anomaly') {
+      setActiveSection('classification');
+    } else if (action === 'candidates' || action === 'ranking') {
+      setRankIndexOpen(true);
+    } else if (action === 'explain') {
+      const top = candidates.slice().sort((a, b) => a.rank - b.rank)[0];
+      if (top && Number.isFinite(top.centroid_latitude) && Number.isFinite(top.centroid_longitude)) {
+        fetchPrediction(top.centroid_latitude, top.centroid_longitude);
+      }
+      setActiveSection('explainable');
+    } else if (action === 'report') {
+      setActiveSection('report');
+      loadReport();
+    }
+  };
+
   // Pre-load default belt prediction on initial render (t45que, unchanged)
   useEffect(() => {
     fetchPrediction(21.8129, 80.1849, CORRIDOR_ZOOM, 't45que');
+  }, []);
+
+  // F14: load the real Chennai dataset total once (totals only,
+  // limit=1) so the comparison row never guesses. Runs once on mount;
+  // the count cannot change without regenerating data on disk.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(apiUrl('/api/candidates?dataset=chennai&limit=1'))
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && Number.isFinite(d?.total)) setChennaiTotal(d.total);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Load the full candidate dataset for the Analytics Dashboard whenever
@@ -377,6 +614,8 @@ export default function App() {
     const loadCandidates = async () => {
       setCandidatesLoading(true);
       setCandidatesError(false);
+      setAoiResult(null);
+      setAoiError(null);
       try {
         const response = await fetch(apiUrl(`/api/candidates?dataset=${selectedDataset}`));
         const data = await response.json();
@@ -705,7 +944,10 @@ export default function App() {
       // itself already handles a null candidate with its own empty state,
       // this just mirrors the exact prior render condition.
       content: !loading && prediction ? (
-        <ExplainableAI candidate={prediction.nearest_candidate ?? null} />
+        <ExplainableAI
+          candidate={prediction.nearest_candidate ?? null}
+          persistence={persistenceFor(prediction.nearest_candidate?.candidate_id)}
+        />
       ) : (
         <div className="flex flex-col items-center gap-2 text-center py-4">
           <p className="text-xs font-sans text-slate-300">
@@ -783,6 +1025,121 @@ export default function App() {
       disabled: !prediction,
       onAction: handleExportProspectus,
     },
+    // ---- F1/F2/F4/F6/F7/F12/F14/F15: previously built panels, now mounted ----
+    {
+      key: 'aoi',
+      emoji: '📍',
+      label: 'AOI',
+      tooltip: 'Select exploration area (search, coords, draw)',
+      description: 'Search, coordinates, rectangle, polygon',
+      content: (
+        <AoiSelector
+          places={[...MANGANESE_BELTS, ...EXTRA_LOCATIONS]}
+          aoi={aoi}
+          onChange={(v) => { setAoi(v); setAoiResult(null); setAoiError(null); }}
+          onLocate={(lat, lon, zoom, dataset) => fetchPrediction(lat, lon, zoom, dataset)}
+          drawMode={drawMode}
+          onDrawModeChange={setDrawMode}
+          drawnPoints={drawnPoints}
+          onClearDraw={() => setDrawnPoints([])}
+          aoiResult={aoiResult}
+          aoiLoading={aoiLoading}
+          aoiError={aoiError}
+          onAnalyzeAoi={analyzeAoi}
+          onExploreCandidate={(lat, lon) => fetchPrediction(lat, lon)}
+        />
+      ),
+    },
+    {
+      key: 'workflow',
+      emoji: '🚀',
+      label: 'Explore',
+      tooltip: 'One-click exploration workflow',
+      description: 'AOI → imagery → analysis → candidates',
+      content: (
+        <WorkflowPanel
+          aoi={aoi}
+          dataset={selectedDataset}
+          workflow={workflow}
+          workflowLoading={workflowLoading}
+          onCheckStatus={checkWorkflowStatus}
+          onShowResults={showWorkflowResults}
+          onAcquire={acquireImagery}
+        />
+      ),
+    },
+    {
+      key: 'layers',
+      emoji: '🗺️',
+      label: 'Layers',
+      tooltip: 'Toggle GIS evidence layers',
+      description: 'Evidence overlays on the map',
+      content: (
+        <LayersPanel layers={layers} availability={layerAvailability} onToggle={toggleLayer} />
+      ),
+    },
+    {
+      key: 'temporal',
+      emoji: '🕓',
+      label: 'Time',
+      tooltip: 'Multi-date observations & persistence',
+      description: 'Observation dates and persistence',
+      content: (
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={loadTemporal}
+            className="gis-btn-lavender-ghost w-full justify-center text-white"
+            title="Load observations + persistence"
+          >
+            <span className="text-white font-bold text-[10px]">↻ LOAD TEMPORAL ({selectedDataset})</span>
+          </button>
+          <TemporalPanel scenes={scenes} temporal={temporal} loading={temporalLoading} dataset={selectedDataset} />
+        </div>
+      ),
+    },
+    {
+      key: 'assistant',
+      emoji: '🤖',
+      label: 'Assistant',
+      tooltip: 'Ask about the loaded results',
+      description: 'AI exploration assistant (data-grounded)',
+      content: (
+        <Assistant
+          getContext={() => ({ candidates, prediction, aoi, temporal, dataset: selectedDataset })}
+        />
+      ),
+    },
+    {
+      key: 'report',
+      emoji: '📄',
+      label: 'Report',
+      tooltip: 'Generate exploration report',
+      description: 'AOI, imagery, candidates, limitations',
+      content: (
+        <ReportView
+          report={report}
+          loading={reportLoading}
+          dataset={selectedDataset}
+          onLoad={loadReport}
+          selectedCandidateId={prediction?.nearest_candidate?.candidate_id ?? null}
+          aoi={aoi}
+        />
+      ),
+    },
+    {
+      key: 'compare',
+      emoji: '◐',
+      label: 'Compare',
+      tooltip: 'Reference corridors vs AI zones',
+      description: 'Before/after exploration comparison',
+      content: (
+        <ComparisonView
+          candidates={candidates}
+          belts={comparisonBelts}
+          onLocate={(lat, lon, zoom, dataset) => fetchPrediction(lat, lon, zoom, dataset)}
+        />
+      ),
+    },
     {
       key: 'howitworks',
       emoji: '⚙️',
@@ -823,14 +1180,16 @@ export default function App() {
             attribution={basemap === 'dark' ? DARK_ATTR : SATELLITE_ATTR}
             maxZoom={19}
           />
+          {layers.labels && (
           <TileLayer
             url={LABELS_URL}
             opacity={0.85}
             maxZoom={19}
             zIndex={10}
           />
+          )}
           <MapViewController coords={selectedCoords} />
-          <LocationSelector onSelectLocation={(lat, lon) => fetchPrediction(lat, lon)} />
+          <LocationSelector onSelectLocation={handleMapClick} />
 
           {/* PIXEL-LEVEL RED/YELLOW/GREEN EXPLORATION-POTENTIAL OVERLAY --
               pre-rendered raster PNG (src/data_processing/render_score_overlay.py)
@@ -841,7 +1200,7 @@ export default function App() {
               fabricated. Leaflet renders ImageOverlay in the overlayPane,
               which sits below markerPane by default, so candidate markers
               stay on top and clickable without any extra z-index handling. */}
-          {pixelOverlay && (
+          {pixelOverlay && layers.overlay && (
             <ImageOverlay
               url={`${API_BASE_URL}${pixelOverlay.image_url}`}
               bounds={pixelOverlay.leaflet_bounds}
@@ -850,7 +1209,7 @@ export default function App() {
           )}
 
           {/* REFERENCE MINERAL CORRIDOR POLYGONS (static reference geology, not survey results) */}
-          {MANGANESE_BELTS.map((belt) => {
+          {layers.reference && MANGANESE_BELTS.map((belt) => {
             const isPassingThreshold = belt.confidence >= confidenceThreshold;
             const isHovered = hoveredBelt && hoveredBelt.id === belt.id;
             return (
@@ -912,7 +1271,7 @@ export default function App() {
               above (color/fillColor '#06b6d4'), but static -- no
               confidence-threshold/hover logic, since there is no fabricated
               tier data for this AOI, unlike MANGANESE_BELTS entries. */}
-          {selectedDataset === 'chennai' && (
+          {selectedDataset === 'chennai' && layers.reference && (
             <Polygon
               positions={CHENNAI_AOI_BOUNDS}
               pathOptions={{
@@ -930,7 +1289,7 @@ export default function App() {
                     Chennai Exploration AOI
                   </div>
                   <div className="text-[10px] text-slate-300 mt-1 font-mono">
-                    Sentinel-2 processing/search area -- 689 candidates
+                    Sentinel-2 processing/search area -- 53 sample-derived candidates
                   </div>
                 </div>
               </LeafletTooltip>
@@ -957,10 +1316,80 @@ export default function App() {
               entry below (and any map click while that dataset is active),
               same as any other selectable location. */}
           <Marker position={[13.0827, 80.2707]}>
+            {layers.labels && (
             <LeafletTooltip permanent direction="top" offset={[0, -10]} opacity={0.92}>
               <div className="text-xs font-sans font-bold text-white px-0.5">Chennai</div>
             </LeafletTooltip>
+            )}
           </Marker>
+
+          {/* F7 candidate-zone markers (top 200 by rank), F2 AOI + draw preview */}
+          {layers.candidates && mapCandidates.map((c) => (
+            Number.isFinite(c?.centroid_latitude) && Number.isFinite(c?.centroid_longitude) ? (
+              <CircleMarker
+                key={c.candidate_id ?? c.rank}
+                center={[c.centroid_latitude, c.centroid_longitude]}
+                radius={5}
+                pathOptions={{
+                  color: candidateColor(c.rank_score),
+                  fillColor: candidateColor(c.rank_score),
+                  fillOpacity: 0.75, weight: 1.5,
+                }}
+                eventHandlers={{
+                  click: () => fetchPrediction(c.centroid_latitude, c.centroid_longitude),
+                }}
+              >
+                <LeafletTooltip direction="top" offset={[0, -6]} opacity={0.95}>
+                  <div className="text-xs font-mono text-white">
+                    <div className="font-bold">{c.candidate_id} · #{c.rank}</div>
+                    <div>score {Number(c.rank_score).toFixed(1)}</div>
+                  </div>
+                </LeafletTooltip>
+              </CircleMarker>
+            ) : null
+          ))}
+          {layers.aoi && aoi?.bbox && (
+            <Polygon
+              positions={[
+                [aoi.bbox.lat_min, aoi.bbox.lon_min],
+                [aoi.bbox.lat_min, aoi.bbox.lon_max],
+                [aoi.bbox.lat_max, aoi.bbox.lon_max],
+                [aoi.bbox.lat_max, aoi.bbox.lon_min],
+              ]}
+              pathOptions={{ color: '#a855f7', fillColor: '#a855f7', fillOpacity: 0.12, weight: 2, dashArray: '6, 4' }}
+            />
+          )}
+          {layers.aoi && aoi?.polygon && (
+            <Polygon
+              positions={aoi.polygon}
+              pathOptions={{ color: '#a855f7', fillColor: '#a855f7', fillOpacity: 0.12, weight: 2, dashArray: '6, 4' }}
+            />
+          )}
+          {drawMode === 'rectangle' && drawnPoints.length === 2 && (
+            <Polygon
+              positions={[
+                [drawnPoints[0].lat, drawnPoints[0].lon],
+                [drawnPoints[0].lat, drawnPoints[1].lon],
+                [drawnPoints[1].lat, drawnPoints[1].lon],
+                [drawnPoints[1].lat, drawnPoints[0].lon],
+              ]}
+              pathOptions={{ color: '#e879f9', fillColor: '#e879f9', fillOpacity: 0.15, weight: 2, dashArray: '4, 4' }}
+            />
+          )}
+          {drawnPoints.length >= 3 && (
+            <Polygon
+              positions={drawnPoints.map((p) => [p.lat, p.lon])}
+              pathOptions={{ color: '#e879f9', fillColor: '#e879f9', fillOpacity: 0.15, weight: 2, dashArray: '4, 4' }}
+            />
+          )}
+          {drawnPoints.length > 0 && drawnPoints.length < 3 && drawnPoints.map((p, i) => (
+            <CircleMarker
+              key={`draw-${i}`}
+              center={[p.lat, p.lon]}
+              radius={5}
+              pathOptions={{ color: '#e879f9', fillColor: '#e879f9', fillOpacity: 0.9, weight: 2 }}
+            />
+          ))}
 
           {/* SELECTED LOCATION PIN */}
           <Marker position={[selectedCoords.lat, selectedCoords.lon]}>
@@ -1050,6 +1479,14 @@ export default function App() {
 
       {/* TOP-RIGHT: DETACHED CYAN BASEMAP SWITCHER */}
       <div className="absolute top-4 right-4 z-20 pointer-events-auto flex items-center gap-2.5">
+        {/* F15 demo-mode launcher */}
+        <button
+          onClick={() => setDemoOpen(true)}
+          className="gis-island-charcoal px-3 py-1.5 text-[11px] font-mono font-bold text-white hover:text-amber-400 transition cursor-pointer"
+          title="Start guided demo mode (8 steps)"
+        >
+          ▶ DEMO
+        </button>
         {/* Electric Cyan Basemap Pill */}
         <div className="gis-island-cyan p-1 flex items-center gap-1">
           <button
@@ -1211,6 +1648,25 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              {/* AOI / OVERLAY / CORRIDOR ROWS -- these layers had no legend
+                  entry; same row styling as the sections above. */}
+              <div className="flex flex-col gap-1.5 text-[10px] font-sans border-t border-white/10 pt-1.5">
+                <span className="font-bold uppercase tracking-wider text-[9px] font-mono text-slate-300">
+                  AOI & Overlays
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0 border border-dashed border-purple-400 bg-purple-500/20"></span>
+                  <span className="text-white font-medium">AOI — selected / drawn area (purple dashed)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0 border border-slate-500 bg-slate-700/60"></span>
+                  <span className="text-white font-medium">Score overlay — pixel RED/YELLOW/GREEN extent</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-sm shrink-0 border border-amber-400/60 bg-amber-500/60"></span>
+                  <span className="text-white font-medium">Corridors — Tier-1/2/3 reference polygons (above)</span>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1259,6 +1715,7 @@ export default function App() {
         sections={menuSections}
         activeKey={activeSection}
         onToggle={(key) => setActiveSection((prev) => (prev === key ? null : key))}
+        onHome={() => setEntered(false)}
       />
 
       {/* FLOATING COORDINATE PILL (BOTTOM-LEFT - AMBER Mn25 SYNCHRONIZED) */}
@@ -1277,6 +1734,20 @@ export default function App() {
           </span>
         </div>
       </div>
+
+      {/* F15 guided demo overlay */}
+      {demoOpen && (
+        <DemoMode onStepAction={handleDemoStep} onExit={() => setDemoOpen(false)} />
+      )}
+
+      {/* Landing / front page -- overlays the app until entry; Launch
+          enters the map, Demo enters straight into the guided tour. */}
+      {!entered && (
+        <Landing
+          onLaunch={() => setEntered(true)}
+          onDemo={() => { setEntered(true); setDemoOpen(true); }}
+        />
+      )}
 
     </div>
   );

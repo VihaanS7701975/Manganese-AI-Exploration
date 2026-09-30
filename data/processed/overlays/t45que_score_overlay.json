@@ -1,0 +1,32 @@
+{
+  "dataset": "t45que",
+  "png": "t45que_score_overlay.png",
+  "width": 10980,
+  "height": 10980,
+  "crs": "EPSG:32645",
+  "bounds": {
+    "lon_min": 85.05444724173412,
+    "lat_min": 21.603835505887048,
+    "lon_max": 86.12851629352629,
+    "lat_max": 22.604638660080553
+  },
+  "leaflet_bounds": [
+    [
+      21.603835505887048,
+      85.05444724173412
+    ],
+    [
+      22.604638660080553,
+      86.12851629352629
+    ]
+  ],
+  "high_cutoff": 75.0,
+  "moderate_cutoff": 50.0,
+  "pixel_counts": {
+    "high": 13151924,
+    "moderate": 13210835,
+    "low": 26428688,
+    "water_excluded": 70440,
+    "total": 120560400
+  }
+}

@@ -86,8 +86,13 @@ data/processed/satellite_features.csv
 # Other raw datasets
 data/raw/
 
-# Processed/generated datasets
-data/processed/
+# Processed/generated datasets (default-ignore; minimal public demo files
+# are re-included below so a fresh clone can run the SIH demo offline).
+# The backend only reads: candidate_sites.csv (+ report txt), chennai
+# *_sample.csv evidence, SAMPLE_NOTE.json, overlays. Multi-GB/large
+# intermediates (ml_features*.csv, manganese_anomalies*.csv,
+# mineralization_scores*.csv, *.tif) stay ignored -- regenerate locally.
+data/processed/*
 
 # Large raster files
 *.jp2
@@ -183,3 +188,23 @@ data/raw/satellite_images/*
 # silently drop product metadata (MTD XML, manifest, quicklooks) on a fresh
 # `git add`. Widened to the full product tree so the scene stays complete.
 # Rasters remain Git-LFS-backed via .gitattributes; see PROVENANCE.md.
+
+# ============================================================
+# Public demo data (minimal, small, safe to publish)
+# Backend demo reads ONLY these files -- everything else under
+# data/processed/ stays ignored (large intermediates, TIFs).
+# ============================================================
+!data/processed/candidate_sites.csv
+!data/processed/candidate_sites_report.txt
+!data/processed/chennai/
+!data/processed/overlays/
+data/processed/chennai/*
+!data/processed/chennai/candidate_sites_sample.csv
+!data/processed/chennai/candidate_sites_sample_report.txt
+!data/processed/chennai/manganese_evidence_sample.csv
+!data/processed/chennai/SAMPLE_NOTE.json
+data/processed/overlays/*
+!data/processed/overlays/t45que_score_overlay.json
+# 24 MB pre-rendered overlay PNG for the T45QUE demo. Within GitHub's
+# 100 MB file limit; move to Git-LFS if it grows.
+!data/processed/overlays/t45que_score_overlay.png

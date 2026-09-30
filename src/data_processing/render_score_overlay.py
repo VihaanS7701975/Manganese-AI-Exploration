@@ -29,11 +29,14 @@ own full extent instead needs no new data or fabrication -- it uses exactly
 the same real per-pixel mineralization_percentile values, just without an
 extra artificial crop.
 
-For Chennai this is a no-op: its target raster (cleaned_images_aoi/B02.tif)
-is *already* the real clipped stack from clip_to_aoi.py, and its own real
-candidates (689, lon 80.078-80.450, lat 12.852-13.218) already fall tightly
-within that raster's extent, so "the raster's own full extent" is the exact
-same region the old AOI-preset clip produced.
+For Chennai this is a no-op until full-scene mineralization scores exist:
+its target raster (cleaned_images_aoi/B02.tif) is the real clipped stack
+from clip_to_aoi.py (actual coverage lon 80.077-80.451, lat 12.849-13.252),
+and only sample-derived candidates exist so far (53 sites, lon
+80.079-80.337, lat 12.898-13.250 -- see
+data/processed/chennai/SAMPLE_NOTE.json), tightly within that raster's
+extent, so "the raster's own full extent" remains the correct region when
+a full-scene overlay is eventually rendered.
 
 Colour rule mirrors the exact thresholds/colours already used across the
 frontend (frontend/src/potentialLevel.js): RED = HIGH >= 75,

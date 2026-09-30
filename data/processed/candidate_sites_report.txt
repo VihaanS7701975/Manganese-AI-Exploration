@@ -1,0 +1,50 @@
+
+================================================================================
+DATA PROVENANCE NOTICE
+This run's input (data/processed/mineralization_scores.csv) was generated from
+the T45QUE (Keonjhar) Sentinel-2 scene. The candidate sites below are NOT
+evidence of manganese anywhere. They are "potential mineralization / manganese
+exploration target" candidates produced by an unsupervised model that has
+never seen a real manganese location, and every site requires independent
+geological / ground-truth validation before it means anything.
+================================================================================
+
+Potential Mineralization / Manganese Exploration Target Report
+(potential mineralization / manganese exploration target candidates only -- NOT confirmed manganese deposits)
+
+Input pixels (all anomaly scores):        52857772
+Selection threshold:                       top 1.0% (by anomaly_percentile)
+Anomalous pixels selected:                 528445
+Estimated native pixel spacing:             10.00 m
+DBSCAN eps:                                 150.0 m
+DBSCAN min_samples:                         5
+Pixels excluded as spatial noise (label -1): 16229
+Candidate clusters produced:                8262
+
+Cluster size (pixel_count): min=4, median=14.0, max=19967, mean=62.0
+Anomaly score across candidate pixels: max=0.261675, min of per-cluster means=0.126399
+Mineralization score across candidate sites: max=88.85, min of per-cluster means=34.02
+
+Top 10 candidate sites (ranked by rank_score = 0.35*strength_percentile + 0.25*density_percentile + 0.4*mineralization_percentile):
+candidate_id  rank  pixel_count  centroid_longitude  centroid_latitude  max_anomaly_score  mean_anomaly_score  mean_mineralization_score  max_mineralization_score  mineralization_percentile  rank_score
+   CAND_0001     1            9           85.618843          21.717492           0.247484            0.228169                  78.470726                 80.074564                  99.967651   94.849382
+   CAND_0002     2            8           85.764111          21.710882           0.233842            0.221966                  78.272230                 78.840839                  99.894776   94.794814
+   CAND_0003     3           24           85.718507          21.703644           0.239356            0.218246                  74.656027                 78.719442                  99.879395   94.780189
+   CAND_0004     4           33           85.817999          22.198116           0.232550            0.209583                  76.088007                 79.142323                  99.924053   94.721800
+   CAND_0005     5           32           85.595094          22.060016           0.226594            0.209125                  77.185730                 79.375530                  99.939797   94.715389
+   CAND_0006     6           26           85.812509          22.186535           0.249790            0.209142                  75.060929                 79.022825                  99.913803   94.709227
+   CAND_0007     7           22           85.736331          21.680941           0.249257            0.212340                  75.566606                 78.486913                  99.840054   94.705145
+   CAND_0008     8           11           86.000651          22.403283           0.237240            0.207670                  78.367435                 81.661184                  99.992105   94.702422
+   CAND_0009     9           17           86.114667          21.711998           0.242755            0.223478                  76.062971                 77.782674                  99.625968   94.695764
+   CAND_0010    10           34           85.802942          22.525386           0.232821            0.206894                  76.752849                 79.376151                  99.939850   94.668811
+
+
+================================================================================
+DATA PROVENANCE NOTICE
+This run's input (data/processed/mineralization_scores.csv) was generated from
+the T45QUE (Keonjhar) Sentinel-2 scene. The candidate sites below are NOT
+evidence of manganese anywhere. They are "potential mineralization / manganese
+exploration target" candidates produced by an unsupervised model that has
+never seen a real manganese location, and every site requires independent
+geological / ground-truth validation before it means anything.
+================================================================================

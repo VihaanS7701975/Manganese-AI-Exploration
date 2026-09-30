@@ -36,7 +36,24 @@ function buildExplanation(candidate, factorLevels) {
   return sentence;
 }
 
-export default function ExplainableAI({ candidate }) {
+const RANK_W = { strength: 0.35, density: 0.25, mineralization: 0.40 };
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+// F5 ranking-contribution breakdown: rank_score is a weighted mean of three
+// 0-100 components (src/ml/candidate_detection.py). Contributions are shown
+// in score points so judges see exactly what each factor added.
+function contributions(candidate) {
+  const s = num(candidate?.strength_percentile);
+  const d = num(candidate?.density_percentile);
+  const m = num(candidate?.mineralization_percentile);
+  const rows = [];
+  if (s != null) rows.push({ label: 'Anomaly strength × 0.35', points: RANK_W.strength * s });
+  if (d != null) rows.push({ label: 'Spatial density × 0.25', points: RANK_W.density * d });
+  if (m != null) rows.push({ label: 'Mineralization × 0.40', points: RANK_W.mineralization * m });
+  return rows;
+}
+
+export default function ExplainableAI({ candidate, persistence }) {
   const factors = candidate
     ? [
         { key: 'anomaly', label: 'Spectral Anomaly Strength', value: candidate.strength_percentile },
@@ -106,6 +123,57 @@ export default function ExplainableAI({ candidate }) {
           <p className="text-[11px] font-sans text-slate-200 leading-relaxed bg-slate-950/40 border border-purple-500/15 rounded-lg p-2">
             {explanation}
           </p>
+
+          {/* F5: ranking contribution in score points (methodology-transparent) */}
+          {(() => {
+            const rows = contributions(candidate);
+            if (!rows.length) return null;
+            const sum = rows.reduce((a, r) => a + r.points, 0);
+            return (
+              <div className="rounded border border-purple-500/20 bg-slate-950/40 p-2">
+                <span className="text-[10px] font-bold font-sans uppercase tracking-wider text-white block mb-1.5">
+                  Ranking contribution (points of {num(candidate.rank_score) != null ? candidate.rank_score.toFixed(1) : '—'})
+                </span>
+                {rows.map((r) => (
+                  <div key={r.label} className="flex justify-between items-center text-[10px] font-mono mb-0.5">
+                    <span className="text-slate-300">{r.label}</span>
+                    <span className="text-white font-bold">+{r.points.toFixed(1)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between items-center text-[10px] font-mono pt-1 mt-1 border-t border-purple-500/15">
+                  <span className="text-slate-400">SUM ≈ RANK SCORE</span>
+                  <span className="text-white font-bold">{sum.toFixed(1)}</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* F5: spectral signals + spatial coherence from real candidate fields */}
+          <div className="rounded border border-purple-500/20 bg-slate-950/40 p-2">
+            <span className="text-[10px] font-bold font-sans uppercase tracking-wider text-white block mb-1.5">
+              Spectral signals & spatial coherence
+            </span>
+            <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
+              {[
+                ['MEAN ANOMALY', num(candidate.mean_anomaly_score)?.toFixed(3)],
+                ['MAX ANOMALY', num(candidate.max_anomaly_score)?.toFixed(3)],
+                ['MEAN MINERAL.', num(candidate.mean_mineralization_score)?.toFixed(1)],
+                ['MAX MINERAL.', num(candidate.max_mineralization_score)?.toFixed(1)],
+                ['ANOMALY %ILE', num(candidate.anomaly_percentile)?.toFixed(1)],
+                ['FOOTPRINT', num(candidate.pixel_count) != null ? `${candidate.pixel_count} px` : null],
+                ['AREA', num(candidate.area_m2) != null ? `~${Math.round(candidate.area_m2).toLocaleString()} m²` : null],
+                ['DENSITY %ILE', num(candidate.density_percentile)?.toFixed(1)],
+              ].filter(([, v]) => v != null).map(([k, v]) => (
+                <div key={k}><span className="text-slate-400">{k} </span><span className="text-white font-bold">{v}</span></div>
+              ))}
+            </div>
+            {/* F5/F6: temporal persistence when a summary is loaded */}
+            <p className="text-[10px] font-sans text-slate-300 mt-1.5 pt-1.5 border-t border-purple-500/15">
+              {persistence
+                ? `Persistence: signal matched in ${persistence.support_count} other observation(s) — supporting remote-sensing evidence, not confirmation.`
+                : 'Persistence: single observation — cross-date support unknown.'}
+            </p>
+          </div>
 
           {/* Why This Rank? */}
           <div className="rounded border border-purple-500/20 bg-slate-950/40 p-2">
